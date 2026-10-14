@@ -6,6 +6,12 @@ export type WindowRadiusPreset = 'square' | 'rounded' | 'xl'
 export type WindowShadowPreset = 'soft' | 'medium' | 'strong'
 export type DensityPreset = 'compact' | 'comfortable' | 'spacious'
 
+export type StoreLink = {
+  id: string
+  label: string
+  url: string
+}
+
 export type StoreTheme = {
   storeName: string
   logoUrl: string
@@ -23,6 +29,10 @@ export type StoreTheme = {
   windowRadius: WindowRadiusPreset
   windowShadow: WindowShadowPreset
   density: DensityPreset
+  footerDescription: string
+  contactEmail: string
+  instagramUrl: string
+  extraLinks: StoreLink[]
 }
 
 export const DEFAULT_STORE_THEME: StoreTheme = {
@@ -42,6 +52,11 @@ export const DEFAULT_STORE_THEME: StoreTheme = {
   windowRadius: 'rounded',
   windowShadow: 'medium',
   density: 'comfortable',
+  footerDescription:
+    'Selecionamos cada produto com cuidado para oferecer uma experiência de compra confiável, do primeiro clique até a entrega na sua porta.',
+  contactEmail: 'contato@minhaloja.com',
+  instagramUrl: '',
+  extraLinks: [],
 }
 
 export const HEADING_FONT_OPTIONS = ['Cormorant Garamond', 'Playfair Display', 'Merriweather', 'Lora', 'Poppins']
@@ -91,6 +106,24 @@ export function parseTheme(raw: RawThemeSettings | undefined | null): StoreTheme
     windowRadius: (raw.theme_window_radius as WindowRadiusPreset) || DEFAULT_STORE_THEME.windowRadius,
     windowShadow: (raw.theme_window_shadow as WindowShadowPreset) || DEFAULT_STORE_THEME.windowShadow,
     density: (raw.theme_density as DensityPreset) || DEFAULT_STORE_THEME.density,
+    footerDescription: raw.theme_footer_description || DEFAULT_STORE_THEME.footerDescription,
+    contactEmail: raw.theme_contact_email || DEFAULT_STORE_THEME.contactEmail,
+    instagramUrl: raw.theme_instagram_url || '',
+    extraLinks: parseExtraLinks(raw.theme_extra_links),
+  }
+}
+
+function parseExtraLinks(raw: string | undefined): StoreLink[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (item): item is StoreLink =>
+        item && typeof item.id === 'string' && typeof item.label === 'string' && typeof item.url === 'string',
+    )
+  } catch {
+    return []
   }
 }
 

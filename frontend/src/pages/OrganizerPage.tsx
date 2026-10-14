@@ -1104,7 +1104,6 @@ function SettingsPanel({
               Páginas, itens, tags, agendamentos e lixeira ficam salvos neste navegador.
             </p>
           </div>
-          <StoreWhatsappSettings token={token} />
         </SettingsTopic>
 
         <SettingsTopic title="Ferramentas">
@@ -1174,7 +1173,7 @@ function SettingsPanel({
 
 // Numero de WhatsApp da loja: ao contrario da gaveta "API" abaixo, qualquer
 // admin pode ver e editar - nao e um dado sensivel como tokens de pagamento.
-function StoreWhatsappSettings({ token }: { token: string | null }) {
+export function StoreWhatsappSettings({ token }: { token: string | null }) {
   const [value, setValue] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)

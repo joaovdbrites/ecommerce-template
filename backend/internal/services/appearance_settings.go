@@ -26,6 +26,10 @@ var themeSettingKeys = []string{
 	"theme_window_radius",
 	"theme_window_shadow",
 	"theme_density",
+	"theme_footer_description",
+	"theme_contact_email",
+	"theme_instagram_url",
+	"theme_extra_links",
 }
 
 // isThemeSettingKey diz se key esta na lista permitida acima - usada tanto

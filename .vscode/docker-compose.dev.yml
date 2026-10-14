@@ -28,6 +28,8 @@ services:
       AUTO_SEED: "true"
       SEED_DEMO_CUSTOMER: "true"
       DEFAULT_TAX_FEE: "4.5"
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@editor.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-editor1234}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}

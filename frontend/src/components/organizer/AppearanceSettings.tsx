@@ -1,5 +1,6 @@
+import { Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Field, SettingsTopic } from '../../pages/OrganizerPage'
+import { Field, SettingsTopic, StoreWhatsappSettings } from '../../pages/OrganizerPage'
 import { Button } from '../Button'
 import { api } from '../../services/api'
 import {
@@ -8,6 +9,7 @@ import {
   BODY_FONT_OPTIONS,
   DEFAULT_STORE_THEME,
   HEADING_FONT_OPTIONS,
+  type StoreLink,
   type StoreTheme,
 } from '../../hooks/useStoreTheme'
 
@@ -28,6 +30,19 @@ const THEME_KEY_BY_FIELD: Record<keyof StoreTheme, string> = {
   windowRadius: 'theme_window_radius',
   windowShadow: 'theme_window_shadow',
   density: 'theme_density',
+  footerDescription: 'theme_footer_description',
+  contactEmail: 'theme_contact_email',
+  instagramUrl: 'theme_instagram_url',
+  extraLinks: 'theme_extra_links',
+}
+
+function serializeThemeValue(field: keyof StoreTheme, value: StoreTheme[keyof StoreTheme]): string {
+  if (field === 'extraLinks') return JSON.stringify(value)
+  return String(value)
+}
+
+function createLinkId() {
+  return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `link-${Date.now()}`
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -75,10 +90,10 @@ export function AppearanceSettings({ token }: { token: string | null }) {
     setNotice('')
     try {
       await Promise.all(
-        Object.entries(theme).map(([field, value]) =>
+        (Object.keys(theme) as Array<keyof StoreTheme>).map((field) =>
           api.put(
             '/admin/theme-settings',
-            { key: THEME_KEY_BY_FIELD[field as keyof StoreTheme], value: String(value) },
+            { key: THEME_KEY_BY_FIELD[field], value: serializeThemeValue(field, theme[field]) },
             token ?? undefined,
           ),
         ),
@@ -262,6 +277,46 @@ export function AppearanceSettings({ token }: { token: string | null }) {
             </div>
           </div>
 
+          <div className="organizer-surface p-4">
+            <h3 className="text-sm font-semibold text-[#3a164f]">Rodapé e redes sociais</h3>
+            <p className="mt-1 text-xs leading-5 text-[#6b665f]">
+              Texto de apresentação e links de contato exibidos no rodapé do site.
+            </p>
+            <div className="mt-3">
+              <Field label="Texto do rodapé">
+                <textarea
+                  value={theme.footerDescription}
+                  onChange={(event) => update('footerDescription', event.target.value)}
+                  rows={3}
+                  className="organizer-input resize-none"
+                />
+              </Field>
+            </div>
+            <StoreWhatsappSettings token={token} />
+            <div className="mt-3">
+              <Field label="E-mail de contato">
+                <input
+                  value={theme.contactEmail}
+                  onChange={(event) => update('contactEmail', event.target.value)}
+                  placeholder="contato@minhaloja.com"
+                  className="organizer-input"
+                />
+              </Field>
+              <Field label="Instagram (link completo)">
+                <input
+                  value={theme.instagramUrl}
+                  onChange={(event) => update('instagramUrl', event.target.value)}
+                  placeholder="https://instagram.com/minhaloja"
+                  className="organizer-input"
+                />
+              </Field>
+            </div>
+            <ExtraLinksEditor
+              links={theme.extraLinks}
+              onChange={(links) => update('extraLinks', links)}
+            />
+          </div>
+
           {notice ? <p className="text-xs font-medium text-[#0f8a5f]">{notice}</p> : null}
 
           <Button type="button" size="sm" disabled={saving} onClick={handleSave}>
@@ -337,6 +392,67 @@ function ImageField({
         ) : null}
       </div>
     </Field>
+  )
+}
+
+function ExtraLinksEditor({
+  links,
+  onChange,
+}: {
+  links: StoreLink[]
+  onChange: (links: StoreLink[]) => void
+}) {
+  function updateLink(id: string, changes: Partial<StoreLink>) {
+    onChange(links.map((link) => (link.id === id ? { ...link, ...changes } : link)))
+  }
+
+  function removeLink(id: string) {
+    onChange(links.filter((link) => link.id !== id))
+  }
+
+  function addLink() {
+    onChange([...links, { id: createLinkId(), label: '', url: '' }])
+  }
+
+  return (
+    <div className="mt-3">
+      <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6b665f]">
+        Links adicionais
+      </span>
+      <div className="space-y-2">
+        {links.map((link) => (
+          <div key={link.id} className="flex items-center gap-2">
+            <input
+              value={link.label}
+              onChange={(event) => updateLink(link.id, { label: event.target.value })}
+              placeholder="Nome (ex.: TikTok)"
+              className="organizer-input w-32 shrink-0"
+            />
+            <input
+              value={link.url}
+              onChange={(event) => updateLink(link.id, { url: event.target.value })}
+              placeholder="https://..."
+              className="organizer-input"
+            />
+            <button
+              type="button"
+              aria-label="Remover link"
+              onClick={() => removeLink(link.id)}
+              className="shrink-0 rounded-full p-1.5 text-[#9b5a50] hover:bg-[#fff0ed]"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={addLink}
+        className="mt-2 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#b77717] hover:underline"
+      >
+        <Plus size={12} /> Adicionar link
+      </button>
+    </div>
   )
 }
 
