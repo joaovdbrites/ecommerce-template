@@ -1,0 +1,427 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&family=Montserrat:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .organizer-input {
+    @apply w-full rounded-xl border border-[#ddc7ea] bg-white px-3 py-2 text-xs text-[#3a164f] outline-none placeholder:text-[#9b86a8] focus:border-[color:var(--color-accent)] focus:outline-none focus:ring-4 focus:ring-[#f3e3c2];
+  }
+
+  .organizer-surface {
+    @apply rounded-[var(--radius-window)] border border-[#e3cfee] bg-[color:var(--color-surface)] shadow-[var(--shadow-window)];
+  }
+
+  .organizer-surface-trust {
+    @apply rounded-[var(--radius-window)] border bg-[linear-gradient(160deg,var(--color-primary)_0%,var(--color-primary-dark)_100%)] text-[color:var(--color-surface)] shadow-[var(--shadow-window)];
+    border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+  }
+
+  .organizer-eyebrow {
+    @apply text-[10px] font-bold uppercase tracking-[0.2em] text-[color:var(--color-primary)];
+  }
+
+  .organizer-font {
+    font-family: var(--font-body), 'Montserrat', sans-serif;
+  }
+
+  .organizer-font h1,
+  .organizer-font h2,
+  .organizer-font h3,
+  .organizer-font h4 {
+    font-family: var(--font-heading), 'Cormorant Garamond', serif;
+  }
+}
+
+:root {
+  font-family: var(--font-body), 'Montserrat', sans-serif;
+  color: #3a164f;
+  background:
+    radial-gradient(circle at top, color-mix(in srgb, var(--color-accent) 10%, transparent), transparent 28%),
+    linear-gradient(180deg, var(--color-bg) 0%, var(--color-surface) 48%, var(--color-bg) 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --color-ink: #2a0f3d;
+  --color-paper: #f8f5f9;
+  --color-sand: #eadcf0;
+  --color-amber: #d89a28;
+  --color-amber-soft: #fff1d6;
+  --color-success: #0f8a5f;
+  --color-error: #a0382f;
+  --color-muted: #6b665f;
+  /* Identidade visual padrao do template - tudo editavel em Configuracoes >
+     Aparencia (ver AppearanceSettings.tsx / useStoreTheme.ts), que sobrescreve
+     estas variaveis em runtime com o que o lojista salvar. */
+  --color-primary: #5b247f;
+  --color-primary-dark: #3a164f;
+  --color-accent: #d89a28;
+  --color-icon: var(--color-accent);
+  --color-bg: #f8f5f9;
+  --color-surface: #eadcf0;
+  --radius-button: 20px;
+  --radius-window: 24px;
+  --shadow-window: 0 24px 60px -28px color-mix(in srgb, var(--color-primary) 70%, black);
+  --space-unit: 1;
+  --font-heading: 'Cormorant Garamond';
+  --font-body: 'Montserrat';
+  /* Aliases para nomes antigos ("trust"/"organizer-*") ainda usados em varios
+     componentes - apontam para os tokens acima em vez de valores cravados,
+     para o editor de Aparencia alcancar essas classes sem renomear tudo de
+     uma vez. */
+  --color-trust: var(--color-primary);
+  --color-trust-dark: var(--color-primary-dark);
+  --color-trust-soft: var(--color-surface);
+  --color-trust-line: var(--color-primary);
+  --shadow-panel: 0 30px 90px -42px color-mix(in srgb, var(--color-primary) 55%, black);
+  --shadow-float: 0 24px 70px -36px color-mix(in srgb, var(--color-primary) 45%, black);
+  --shadow-3d:
+    0 2px 4px color-mix(in srgb, var(--color-primary) 20%, transparent),
+    0 18px 40px -18px color-mix(in srgb, var(--color-primary) 55%, black),
+    0 40px 80px -40px color-mix(in srgb, var(--color-primary) 65%, black);
+  --shadow-trust: var(--shadow-window);
+  --color-organizer-primary: var(--color-primary);
+  --color-organizer-primary-dark: var(--color-primary-dark);
+  --color-organizer-window: var(--color-surface);
+  --color-organizer-icon: var(--color-accent);
+  --color-organizer-bg: var(--color-bg);
+  --shadow-organizer: var(--shadow-window);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  color: var(--color-ink);
+  background: transparent;
+}
+
+body.drawer-open {
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+*::selection {
+  background: rgba(216, 154, 40, 0.24);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+a,
+button,
+input,
+select,
+textarea {
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease,
+    border-color 220ms ease,
+    background-color 220ms ease,
+    color 220ms ease,
+    opacity 220ms ease;
+}
+
+button:active,
+a:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+:focus-visible {
+  outline: 2px solid rgba(216, 154, 40, 0.72);
+  outline-offset: 2px;
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes floatSoft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes meshDrift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-2%, 2%, 0) scale(1.05);
+  }
+}
+
+@keyframes orbitGlow {
+  0% {
+    transform: rotate(0deg) translateX(0);
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: rotate(360deg) translateX(0);
+    opacity: 0.5;
+  }
+}
+
+@keyframes pulseTrust {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(20, 45, 82, 0.28);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(20, 45, 82, 0);
+  }
+}
+
+@keyframes countUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: pageEnter 520ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 560ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    transform 560ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.float-soft {
+  animation: floatSoft 4.5s ease-in-out infinite;
+}
+
+.mesh-field {
+  animation: meshDrift 16s ease-in-out infinite;
+}
+
+.orbit-ring {
+  animation: orbitGlow 22s linear infinite;
+}
+
+.trust-pulse {
+  animation: pulseTrust 2.6s ease-in-out infinite;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Cartao com profundidade real: perspectiva + preserve-3d aplicados via
+   componente TiltCard, que injeta rotateX/rotateY conforme o ponteiro. */
+.tilt-card {
+  transform-style: preserve-3d;
+  will-change: transform;
+  transition:
+    transform 420ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    box-shadow 420ms ease;
+}
+
+.tilt-glare {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  mix-blend-mode: overlay;
+  transition: opacity 280ms ease;
+}
+
+.tilt-layer {
+  transform: translateZ(38px);
+  transform-style: preserve-3d;
+}
+
+.skeleton-wave {
+  background: linear-gradient(
+    90deg,
+    rgba(244, 239, 232, 0.85) 0%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(244, 239, 232, 0.85) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s infinite linear;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-heading), 'Cormorant Garamond', serif;
+    letter-spacing: -0.025em;
+  }
+}
+
+@layer components {
+  .surface-panel {
+    @apply border border-[#e3cfee] shadow-[var(--shadow-panel)] backdrop-blur;
+    background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+    border-radius: calc(var(--radius-window) * 1.33);
+  }
+
+  .surface-soft {
+    @apply border border-[#e3cfee] bg-[color:var(--color-surface)] shadow-[var(--shadow-float)];
+    border-radius: calc(var(--radius-window) * 1.17);
+  }
+
+  .interactive-card {
+    @apply transition duration-300 hover:-translate-y-1 hover:shadow-[0_30px_70px_-38px_rgba(58,22,79,0.34)];
+  }
+
+  .eyebrow {
+    @apply text-[11px] font-bold uppercase tracking-[0.34em] text-[color:var(--color-primary)];
+  }
+
+  .field-base {
+    @apply w-full border border-[#ddc7ea] bg-white px-4 py-3.5 text-sm text-[#2a0f3d] placeholder:text-[#9b86a8] focus:border-[color:var(--color-accent)] focus:outline-none focus:ring-4 focus:ring-[#f7dfb1];
+    border-radius: calc(var(--radius-window) * 0.92);
+  }
+
+  /* Variante baixa, para formularios longos dentro de janela flutuante. */
+  .field-compact {
+    @apply px-3.5 py-2.5;
+    border-radius: calc(var(--radius-window) * 0.67);
+  }
+
+  .surface-trust {
+    @apply border bg-[linear-gradient(160deg,var(--color-primary)_0%,var(--color-primary-dark)_100%)] text-[color:var(--color-surface)] shadow-[var(--shadow-trust)];
+    border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+    border-radius: calc(var(--radius-window) * 1.17);
+  }
+
+  .eyebrow-trust {
+    @apply text-[11px] font-bold uppercase tracking-[0.34em] text-[color:var(--color-accent)];
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .tilt-card {
+    transform: none !important;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
+/* Painel do organizador: o mesmo grid de conteudo aparece tanto no centro
+   quanto na gaveta direita (com larguras bem diferentes e variaveis por
+   arrasto), entao as colunas reagem a largura real do contêiner
+   (container query) em vez do breakpoint da janela inteira. */
+.organizer-container {
+  container-type: inline-size;
+  container-name: organizer;
+}
+
+.organizer-grid-actions,
+.organizer-grid-content {
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+@container organizer (min-width: 420px) {
+  .organizer-grid-content {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container organizer (min-width: 560px) {
+  .organizer-grid-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container organizer (min-width: 760px) {
+  .organizer-grid-content {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container organizer (min-width: 900px) {
+  .organizer-grid-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container organizer (min-width: 1100px) {
+  .organizer-grid-actions {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}

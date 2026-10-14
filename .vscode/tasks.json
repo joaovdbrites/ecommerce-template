@@ -1,0 +1,116 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Site: iniciar containers",
+      "type": "process",
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "${workspaceFolder}/.vscode/docker-compose.dev.yml",
+        "up",
+        "-d",
+        "--remove-orphans"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Site: aguardar serviços",
+      "type": "shell",
+      "command": "for tentativa in {1..30}; do if curl -fsS http://localhost:8081/health >/dev/null && curl -fsS http://localhost:5174/ >/dev/null; then echo 'Site pronto em http://localhost:5174'; exit 0; fi; sleep 2; done; echo 'Os serviços não ficaram prontos. Execute a tarefa Site: logs.'; exit 1",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Site: abrir no navegador",
+      "type": "process",
+      "command": "xdg-open",
+      "args": [
+        "http://localhost:5174"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Site: executar",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Site: iniciar containers",
+        "Site: aguardar serviços",
+        "Site: abrir no navegador"
+      ],
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Site: verificar",
+      "type": "shell",
+      "command": "curl -fsS http://localhost:8081/health && echo && curl -fsS -o /dev/null -w 'Frontend HTTP %{http_code}\\n' http://localhost:5174/",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "Site: logs",
+      "type": "process",
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "${workspaceFolder}/.vscode/docker-compose.dev.yml",
+        "logs",
+        "--follow",
+        "--tail",
+        "150"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Site: status",
+      "type": "process",
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "${workspaceFolder}/.vscode/docker-compose.dev.yml",
+        "ps"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Site: parar",
+      "type": "process",
+      "command": "docker",
+      "args": [
+        "compose",
+        "-f",
+        "${workspaceFolder}/.vscode/docker-compose.dev.yml",
+        "down"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

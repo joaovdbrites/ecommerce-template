@@ -1,0 +1,80 @@
+name: ecommerce-template-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: store
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-store_dev}
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d store"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    image: golang:1.26-alpine
+    working_dir: /workspace/backend
+    command: ["sh", "-c", "go mod download && go run ./cmd/api"]
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-store_dev}@db:5432/store?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-ecommerce-template-local-development-secret}
+      FRONTEND_URL: http://localhost:5174
+      AUTO_SEED: "true"
+      SEED_DEMO_CUSTOMER: "true"
+      DEFAULT_TAX_FEE: "4.5"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Minha Loja}
+      DEBUG_PASSWORD_RESET_LINK: ${DEBUG_PASSWORD_RESET_LINK:-true}
+      GOCACHE: /root/.cache/go-build
+      GOMODCACHE: /go/pkg/mod
+    volumes:
+      - ../backend:/workspace/backend
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+      - backend_uploads:/workspace/backend/public/uploads
+    ports:
+      - "8081:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  frontend:
+    image: node:24-alpine
+    working_dir: /workspace/frontend
+    command: ["sh", "-c", "test -x node_modules/.bin/vite || npm ci; npm run dev -- --host 0.0.0.0"]
+    environment:
+      VITE_API_URL: http://localhost:8081/api
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ../frontend:/workspace/frontend
+      - frontend_node_modules:/workspace/frontend/node_modules
+    ports:
+      - "5174:5174"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_dev_data:
+  frontend_node_modules:
+  go_mod_cache:
+  go_build_cache:
+  backend_uploads:

@@ -1,0 +1,16 @@
+INSERT INTO settings (key, value) VALUES ('theme_store_name', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_logo_url', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_favicon_url', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_banner_url', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_color_primary', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_color_accent', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_color_bg', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_color_success', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_color_error', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_font_heading', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_font_body', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_icon_color', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_button_radius', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_window_radius', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_window_shadow', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('theme_density', '') ON CONFLICT (key) DO NOTHING;
