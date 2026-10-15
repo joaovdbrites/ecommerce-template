@@ -1,29 +1,19 @@
 import { FileText } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useOrganizerStore } from '../../hooks/useOrganizerStore'
-import {
-  getOrganizerPageModules,
-  isOrganizerNodeAvailable,
-  isOrganizerPreviewMode,
-  normalizeOrganizerSearch,
-} from '../../types/organizer'
+import { getOrganizerPageModules, isOrganizerNodeAvailable, isOrganizerPreviewMode } from '../../types/organizer'
 import { isSiteModuleRenderable } from '../site/moduleContent'
 import { SiteModuleRenderer } from '../site/SiteModuleRenderer'
 
-const pageIds: Record<string, string> = {
-  arabes: 'arabes',
-  feminino: 'feminino',
-  masculino: 'masculino',
-  importados: 'importados',
-  unisex: 'unisex',
-}
-
-export function CategoryWindow({ title }: { title: string }) {
+// Acha a pagina pelo caminho da URL (sem prefixo/rota de busca) em vez de um
+// mapa de ids cravado - assim qualquer pagina de topo nova no Organizador so
+// precisa de uma rota correspondente em AppRouter.tsx, sem editar este arquivo.
+export function CategoryWindow() {
   const location = useLocation()
   const { store } = useOrganizerStore()
   const previewMode = isOrganizerPreviewMode(location.search)
-  const pageId = pageIds[normalizeOrganizerSearch(title)] ?? normalizeOrganizerSearch(title)
-  const page = store.nodes.find((node) => node.id === pageId && node.type === 'page')
+  const page = store.nodes.find((node) => node.type === 'page' && node.route === location.pathname)
+  const pageId = page?.id ?? ''
   const modules = getOrganizerPageModules(store.nodes, pageId).filter(
     (node) =>
       isOrganizerNodeAvailable(node, previewMode) &&
@@ -33,8 +23,8 @@ export function CategoryWindow({ title }: { title: string }) {
   if (!page || !isOrganizerNodeAvailable(page, previewMode)) {
     return (
       <section className="surface-panel mx-auto max-w-2xl p-8 text-center">
-        <FileText size={34} className="mx-auto text-[#d89a28]" />
-        <h1 className="mt-4 font-serif text-3xl font-semibold">Página não encontrada</h1>
+        <FileText size={34} className="mx-auto text-[color:var(--color-icon)]" />
+        <h1 className="mt-4 text-3xl font-semibold">Página não encontrada</h1>
         <p className="mt-2 text-sm text-[#6b665f]">
           Esta página foi removida ou ainda não está publicada no organizador.
         </p>

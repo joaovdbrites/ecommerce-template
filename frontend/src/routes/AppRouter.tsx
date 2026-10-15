@@ -32,11 +32,9 @@ export function AppRouter() {
         <Route path="/admin" element={<OrganizerPage />} />
         <Route element={<MainLayout />}>
           <Route path="/" element={<HomePage />} />
-          <Route path="/arabes" element={<CategoryPage title="Árabes" />} />
-          <Route path="/feminino" element={<CategoryPage title="Feminino" />} />
-          <Route path="/masculino" element={<CategoryPage title="Masculino" />} />
-          <Route path="/importados" element={<CategoryPage title="Importados" />} />
-          <Route path="/unisex" element={<CategoryPage title="Unisex" />} />
+          <Route path="/categoria-a" element={<CategoryPage />} />
+          <Route path="/categoria-b" element={<CategoryPage />} />
+          <Route path="/destaques" element={<CategoryPage />} />
           <Route path="/pagina/:slug" element={<ManagedPage />} />
           <Route path="/produto/:slug" element={<ProductPage />} />
           <Route path="/pedido/:id" element={<OrderTrackingPage />} />

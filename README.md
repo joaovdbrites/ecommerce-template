@@ -1,6 +1,10 @@
-# On Perfumaria e Importados
+# Minha Loja
 
-Aplicacao full-stack para ecommerce de perfumes importados e arabes.
+Template full-stack de ecommerce, com identidade visual (cores, tipografia,
+logo, formato de botoes/janelas, densidade) editavel pelo proprio admin em
+Configuracoes > Aparencia, sem precisar mexer em codigo.
+
+Uso proprietario - ver [LICENSE.md](LICENSE.md).
 
 ## Stack
 
