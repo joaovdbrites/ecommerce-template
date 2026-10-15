@@ -20,7 +20,18 @@ Uso proprietario - ver [LICENSE.md](LICENSE.md).
 - API REST com autenticacao JWT para clientes
 - Arquitetura de pagamento preparada com provider mockado
 
-## Como rodar com Docker
+## Como rodar em desenvolvimento (Docker)
+
+```bash
+docker compose -f .vscode/docker-compose.dev.yml up -d
+```
+
+Sobem tres containers: `db` (Postgres), `backend` (Go, `http://localhost:8081`)
+e `frontend` (Vite com hot reload, `http://localhost:5174`). Seed automatico
+cria um administrador padrao (`admin@editor.local` / `editor1234` por padrao —
+troque via `ADMIN_EMAIL`/`ADMIN_PASSWORD`) e um cliente de teste.
+
+## Como rodar em producao
 
 ```bash
 JWT_SECRET=troque-por-algo-forte POSTGRES_PASSWORD=troque-por-algo-forte docker compose up --build
@@ -45,7 +56,6 @@ Para desenvolver frontend e backend separadamente, use as pastas `frontend/` e
 ```text
 backend/   API, regras de negocio, banco de dados e arquivos estaticos
 frontend/  interface React, rotas, componentes e estado do cliente
-Iconi/     arquivos originais dos icones do projeto
 ```
 
 ### Frontend
@@ -81,17 +91,15 @@ backend.
 
 ## Endpoints principais
 
-- `GET /api/store/home`
-- `GET /api/products`
-- `GET /api/products/:slug`
-- `GET /api/customer/orders`
-- `GET /api/customer/orders/:id`
+- `GET /api/store/config` — configuracao publica da loja (frete, tema visual, WhatsApp)
+- `GET/PUT /api/organizer` — arvore de paginas/itens do site (o "CMS" do admin)
+- `GET /api/orders` / `GET /api/order/:id`
 - `POST /api/checkout`
-- `POST /api/auth/customer/register`
-- `POST /api/auth/customer/login`
+- `POST /api/auth/customer/register` / `POST /api/auth/customer/login`
+- `GET/PUT /api/admin/theme-settings` — aparencia (cores, fontes, logo, rodape)
 
 ## Observacoes
 
-- Seed automatico cria categorias, marcas, produtos mockados e cupom.
+- Seed automatico cria regras de frete e um cupom de boas-vindas; catalogo e paginas sao montados pelo Organizador (admin).
 - Checkout cria cliente automaticamente para futuras compras.
 - Estoque baixa em vendas pagas online.

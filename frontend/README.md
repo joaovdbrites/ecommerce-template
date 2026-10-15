@@ -1,4 +1,4 @@
-# Frontend da On Perfumaria
+# Frontend
 
 Interface React da loja, escrita em TypeScript e criada com Vite e Tailwind CSS.
 
@@ -34,20 +34,24 @@ quando for reutilizado por diferentes dominios.
 
 ## Paginas publicas
 
-| Rota             | Finalidade             |
-| ---------------- | ---------------------- |
-| `/`              | Pagina inicial         |
-| `/comercial`     | Produtos comerciais    |
-| `/arabes`        | Perfumes arabes        |
-| `/feminino`      | Perfumes femininos     |
-| `/masculino`     | Perfumes masculinos    |
-| `/importados`    | Perfumes importados    |
-| `/unisex`        | Perfumes unissex       |
-| `/produto/:slug` | Detalhes de um produto |
-| `/pedidos`       | Historico de pedidos   |
-| `/pedidos/:id`   | Detalhes de um pedido  |
-| `/checkout`      | Finalizacao da compra  |
-| `/conta`         | Conta do cliente       |
+| Rota             | Finalidade                                            |
+| ---------------- | ------------------------------------------------------ |
+| `/`              | Pagina inicial                                         |
+| `/categoria-a`   | Categoria de exemplo (renomeie/adicione pelo admin)     |
+| `/categoria-b`   | Categoria de exemplo (renomeie/adicione pelo admin)     |
+| `/destaques`     | Categoria de exemplo (renomeie/adicione pelo admin)     |
+| `/pagina/:slug`  | Pagina generica criada pelo Organizador (admin)         |
+| `/produto/:slug` | Detalhes de um produto                                  |
+| `/pedidos`       | Historico de pedidos                                    |
+| `/pedidos/:id`   | Detalhes de um pedido                                   |
+| `/checkout`      | Finalizacao da compra                                   |
+| `/conta`         | Conta do cliente                                        |
+| `/admin`         | Organizador (admin) — catalogo, paginas e Configuracoes |
+
+As tres categorias de exemplo sao rotas fixas no React Router
+(`src/routes/AppRouter.tsx`); para adicionar uma nova categoria de topo e
+preciso criar a pagina pelo Organizador **e** registrar a rota correspondente
+aqui.
 
 ## Convencoes
 
