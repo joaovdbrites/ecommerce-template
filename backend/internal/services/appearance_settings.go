@@ -52,6 +52,7 @@ func (s *Service) GetThemeSettings(ctx context.Context) (map[string]string, erro
 	}
 	defer rows.Close()
 
+	// Monta o mapa com o que ja esta salvo no banco.
 	settings := map[string]string{}
 	for rows.Next() {
 		var key, value string
@@ -60,6 +61,9 @@ func (s *Service) GetThemeSettings(ctx context.Context) (map[string]string, erro
 		}
 		settings[key] = value
 	}
+	// Garante que toda chave do painel aparece na resposta, mesmo que o
+	// admin ainda nao tenha configurado (evita o front ter que tratar
+	// ausencia de chave como caso especial).
 	for _, key := range themeSettingKeys {
 		if _, ok := settings[key]; !ok {
 			settings[key] = ""

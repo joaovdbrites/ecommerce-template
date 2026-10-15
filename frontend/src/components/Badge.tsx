@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 
 type BadgeTone = 'amber' | 'success' | 'neutral' | 'danger' | 'trust'
 
+// Combinacao de cor de fundo/texto/borda para cada variacao semantica do badge.
 const toneClasses: Record<BadgeTone, string> = {
   amber: 'bg-[#fff1d6] text-[#9b6110] border-[#f4d08a]',
   success: 'bg-[#eefaf5] text-[#0f8a5f] border-[#bde4d4]',
@@ -10,6 +11,8 @@ const toneClasses: Record<BadgeTone, string> = {
   trust: 'bg-[#eadcf0] text-[#3a164f] border-[#ddc7ea]',
 }
 
+// Etiqueta pequena e arredondada usada para destacar status ou categorias
+// (ex: "promocao", "novo") em cards e listas pelo site.
 export function Badge({
   children,
   tone = 'neutral',

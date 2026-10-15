@@ -1,5 +1,7 @@
 import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
 
+// Label + dica opcional compartilhados pelos tres tipos de campo abaixo
+// (input, select e textarea), para manter o mesmo estilo de rotulo.
 function fieldWrapper(label: string, hint?: string) {
   return (
     <>
@@ -11,6 +13,7 @@ function fieldWrapper(label: string, hint?: string) {
   )
 }
 
+// Campo de texto padrao de formulario, com label e dica.
 export function InputField({
   label,
   hint,
@@ -28,6 +31,7 @@ export function InputField({
   )
 }
 
+// Campo de selecao (dropdown) padrao de formulario, com label e dica.
 export function SelectField({
   label,
   hint,
@@ -49,6 +53,7 @@ export function SelectField({
   )
 }
 
+// Campo de texto multilinha padrao de formulario, com label e dica.
 export function TextAreaField({
   label,
   hint,

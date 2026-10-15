@@ -10,6 +10,8 @@ import { useAuth } from '../contexts/AuthContext'
 export function CustomerAuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { isCustomer, openAuth } = useAuth()
 
+  // Ja logado nao precisa abrir o modal de novo; visitante tem a janela
+  // aberta automaticamente na view certa (login ou cadastro) conforme `mode`
   useEffect(() => {
     if (isCustomer) return
     openAuth({
@@ -33,6 +35,8 @@ export function PasswordResetPage() {
   const { openAuth } = useAuth()
   const resetToken = searchParams.get('token') ?? ''
 
+  // Link sem token (quebrado/incompleto) cai no modal padrao com um aviso;
+  // com token valido abre direto na tela de redefinir senha
   useEffect(() => {
     if (!resetToken) {
       openAuth({ reason: 'O link de recuperacao esta incompleto. Entre ou peca um novo link.' })

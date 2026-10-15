@@ -16,6 +16,8 @@ type CatalogModuleProps = {
   items: ItemCardContent[]
 }
 
+// Aplica os filtros de preco/marca/volume e a ordenacao escolhida sobre a
+// lista de itens do catalogo. Chamada antes de paginar o resultado.
 function filterItems(items: ItemCardContent[], filters: CatalogFilters) {
   const filtered = items.filter((item) => {
     const price = item.price ?? 0
@@ -45,17 +47,26 @@ function filterItems(items: ItemCardContent[], filters: CatalogFilters) {
   return filtered
 }
 
+// Renderiza um modulo de catalogo no site publico: grade paginada de
+// produtos com filtro lateral (desktop) ou em gaveta (mobile), no modelo
+// usado pelas paginas de categoria.
 export function CatalogModule({ module, items }: CatalogModuleProps) {
   const [page, setPage] = useState(0)
+  // Controla a gaveta de filtros no mobile (no desktop o painel fica sempre visivel).
   const [filterOpen, setFilterOpen] = useState(false)
   const [filters, setFilters] = useState<CatalogFilters>(emptyCatalogFilters)
+  // Lista filtrada/ordenada, recalculada so quando os filtros ou os itens mudam.
   const filteredItems = useMemo(() => filterItems(items, filters), [filters, items])
   const pageCount = Math.max(1, Math.ceil(filteredItems.length / ITEMS_PER_PAGE))
+  // Garante que a pagina atual nunca fique fora do intervalo valido (ex.:
+  // apos um filtro reduzir a quantidade de paginas disponiveis).
   const safePage = Math.min(page, pageCount - 1)
   const visibleItems = filteredItems.slice(
     safePage * ITEMS_PER_PAGE,
     safePage * ITEMS_PER_PAGE + ITEMS_PER_PAGE,
   )
+  // Quantidade de filtros ativos no momento, exibida como contador no botao
+  // de filtro mobile.
   const activeFilterCount =
     Number(filters.pickupOnly) +
     Number(filters.minPrice !== null) +
@@ -64,20 +75,25 @@ export function CatalogModule({ module, items }: CatalogModuleProps) {
     filters.volumes.length +
     Number(filters.sort !== 'default')
 
+  // Ao mudar os filtros, sempre volta para a primeira pagina - senao o
+  // usuario poderia ficar numa pagina que nao existe mais apos filtrar.
   const handleFiltersChange = (next: CatalogFilters) => {
     setFilters(next)
     setPage(0)
   }
 
+  // Sem nenhum item vinculado ao catalogo, nao ha o que mostrar.
   if (items.length === 0) return null
 
   return (
     <section aria-label={module.name} className="lg:grid lg:grid-cols-[280px_1fr] lg:items-start lg:gap-6">
+      {/* Painel de filtro fixo na lateral, visivel so a partir do breakpoint lg. */}
       <div className="hidden lg:block">
         <CategoryFilterPanel items={items} value={filters} onChange={handleFiltersChange} />
       </div>
 
       <div className="space-y-4">
+        {/* Abaixo do lg, o filtro vira um botao que abre a gaveta (CategoryFilterDrawer). */}
         <button
           type="button"
           onClick={() => setFilterOpen(true)}
@@ -113,6 +129,7 @@ export function CatalogModule({ module, items }: CatalogModuleProps) {
           ) : null}
         </div>
 
+        {/* Grade da pagina atual, ou um aviso quando os filtros zeram o resultado. */}
         {visibleItems.length > 0 ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-3 lg:gap-5 xl:grid-cols-4">
             {visibleItems.map((item) => (
@@ -125,6 +142,7 @@ export function CatalogModule({ module, items }: CatalogModuleProps) {
           </div>
         )}
 
+        {/* Paginacao so aparece quando ha mais de uma pagina de resultado. */}
         {pageCount > 1 ? (
           <div className="flex items-center justify-center gap-4 pt-2">
             <button

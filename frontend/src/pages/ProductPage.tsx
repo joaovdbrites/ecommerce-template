@@ -37,10 +37,12 @@ export function ProductPage() {
   const [selectedImage, setSelectedImage] = useState('')
   const [favorited, setFavorited] = useState(false)
 
+  // Acha o item do Organizador correspondente ao slug da rota
   const node = useMemo(
     () => store.nodes.find((candidate) => candidate.id === slug && candidate.type === 'item') ?? null,
     [slug, store.nodes],
   )
+  // Converte o node do Organizador pro modelo de Product usado nesta pagina
   const product: Product | null = useMemo(
     () => (node ? itemCardToProduct(toItemContent(node, store.tags)) : null),
     [node, store.tags],
@@ -50,10 +52,14 @@ export function ProductPage() {
   // (senao o primeiro render pisca um erro falso).
   const loading = !node && store.nodes.length === 0
 
+  // Registra o evento de visualizacao do produto pra analytics/estatisticas
+  // do Organizador sempre que o node mudar (ex.: ao navegar entre produtos)
   useEffect(() => {
     if (node) trackProductEvent(node.id, 'view', tokenRef.current)
   }, [node])
 
+  // Galeria de imagens: usa a lista de imagens do produto, ou cai pra imagem
+  // principal unica quando nao ha galeria
   const allImages = product
     ? product.images?.length
       ? product.images
@@ -64,16 +70,20 @@ export function ProductPage() {
     : allImages[0] || product?.imageUrl || ''
   const statusPresentation = getItemStatusPresentation(product?.status)
   const total = product ? product.finalPrice * quantity : 0
+  // Desconto do Pix vem do cadastro do produto, ou usa o padrao da loja
   const pixDiscount =
     product?.pixDiscountPercent != null ? product.pixDiscountPercent / 100 : DEFAULT_PIX_DISCOUNT
   const pixPrice = product ? product.finalPrice * (1 - pixDiscount) : 0
   const installmentPrice = product ? product.finalPrice / INSTALLMENTS : 0
 
+  // Adiciona o produto ao carrinho repetindo addItem pela quantidade escolhida
   const addToCart = () => {
     if (!product) return
     for (let index = 0; index < quantity; index += 1) addItem(product)
   }
 
+  // Compartilha o link do produto via share sheet nativo quando disponivel,
+  // senao cai pra copiar o link pra area de transferencia
   const handleShare = async () => {
     const shareData = { title: product?.name, url: window.location.href }
     if (navigator.share) {
@@ -87,10 +97,12 @@ export function ProductPage() {
     }
   }
 
+  // Ainda esperando o primeiro carregamento do Organizador: mostra placeholder
   if (loading) {
     return <Skeleton className="h-[620px] w-full rounded-[36px]" />
   }
 
+  // Ja carregou mas nao achou o produto com esse slug: estado de erro
   if (!product) {
     return (
       <section className="surface-panel mx-auto max-w-2xl p-8 text-center">
@@ -107,12 +119,14 @@ export function ProductPage() {
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
           <div className="space-y-5">
             <div>
+              {/* Selo de desconto so aparece quando o produto tem um label configurado */}
               {product.discountLabel ? (
                 <Badge tone="amber" className="mb-4">
                   {product.discountLabel}
                 </Badge>
               ) : null}
               <div className={`grid gap-3 ${allImages.length > 1 ? 'sm:grid-cols-[80px_1fr]' : ''}`}>
+                {/* Coluna de miniaturas (desktop) so quando ha mais de uma imagem */}
                 {allImages.length > 1 ? (
                   <div className="hidden max-h-[420px] shrink-0 flex-col gap-3 overflow-y-auto pr-1 sm:flex">
                     {allImages.map((img: string, i: number) => (
@@ -152,6 +166,7 @@ export function ProductPage() {
                       <Heart size={18} className={favorited ? 'fill-[#a0382f] text-[#a0382f]' : ''} />
                     </button>
                   </div>
+                  {/* Imagem principal, ou um icone de caixa quando nao ha imagem nenhuma */}
                   {displayedImage ? (
                     <img
                       src={displayedImage}
@@ -165,6 +180,7 @@ export function ProductPage() {
                   )}
                 </div>
               </div>
+              {/* Faixa de miniaturas no mobile (a coluna lateral so existe no desktop) */}
               {allImages.length > 1 ? (
                 <div className="mt-3 flex gap-3 overflow-x-auto pb-1 sm:hidden">
                   {allImages.map((img: string, i: number) => (
@@ -180,6 +196,7 @@ export function ProductPage() {
               ) : null}
             </div>
 
+            {/* Acordeao de descricao so aparece quando o produto tem descricao cadastrada */}
             {product.description ? (
               <Accordion title="Detalhes" defaultOpen>
                 <p className="text-sm leading-7 text-[#6b665f]">{product.description}</p>
@@ -206,10 +223,13 @@ export function ProductPage() {
               </Badge>
 
               <div className="mt-3">
+                {/* Status especial (ex.: "sob encomenda") substitui o preco
+                    normal por um texto customizado */}
                 {statusPresentation.priceOverrideText ? (
                   <p className="text-3xl leading-none text-[#2a0f3d]">{statusPresentation.priceOverrideText}</p>
                 ) : (
                   <>
+                    {/* Preco riscado so aparece quando ha desconto ativo */}
                     {product.finalPrice < product.salePrice ? (
                       <p className="text-sm text-stone-400 line-through">{format(product.salePrice)}</p>
                     ) : null}
@@ -279,6 +299,8 @@ export function ProductPage() {
   )
 }
 
+// Acordeao simples (titulo clicavel + conteudo recolhivel), usado aqui pra
+// descricao do produto
 function Accordion({
   title,
   children,

@@ -1,11 +1,22 @@
+// Os seis "tipos de conteudo" que um no do Organizador pode ser: pagina do
+// site, subpasta organizacional (nao navegavel sozinha), carrossel de
+// produtos, destaque/banner, catalogo (grade de produtos) ou item (produto
+// individual).
 export type OrganizerContentType = 'page' | 'folder' | 'carousel' | 'highlight' | 'catalog' | 'item'
+// Estado de publicacao/disponibilidade de um no. "draft" fica invisivel no
+// site (so aparece no preview do Organizador); os demais sao visiveis com
+// apresentacoes diferentes (ver utils/itemStatus.ts).
 export type OrganizerStatus =
   | 'draft'
   | 'published'
   | 'coming-soon'
   | 'out-of-stock'
   | 'low-stock'
+// Tamanho relativo usado no layout de grade/carrossel.
 export type OrganizerSize = 'small' | 'medium' | 'large'
+// Como um no e efetivamente renderizado na pagina - geralmente decorre do
+// `type`, mas existe separado porque alguns tipos admitem mais de uma
+// apresentacao visual (ex.: "highlight" pode ser banner simples ou faixa de marcas).
 export type OrganizerVariant =
   | 'standard'
   | 'banner'
@@ -14,6 +25,10 @@ export type OrganizerVariant =
   | 'product-grid'
   | 'brand-marquee'
 
+// Um no da arvore do Organizador - pode ser pagina, pasta, carrossel,
+// catalogo, destaque ou item (ver OrganizerContentType). A arvore inteira do
+// site (estrutura de navegacao + conteudo) e modelada como uma lista plana
+// desses nos ligados por parentId.
 export type OrganizerNode = {
   id: string
   name: string
@@ -46,12 +61,16 @@ export type OrganizerNode = {
   pixDiscountPercent?: number
   route?: string
   variant?: OrganizerVariant
+  /** Veio do seed padrao (initialOrganizerStore), nao foi criado pelo lojista. */
   builtin?: boolean
+  /** Nao pode ser movido, reordenado nem excluido pelo lojista (ex.: "home"). */
   immutable?: boolean
   createdAt: string
   updatedAt: string
 }
 
+// Uma tag que o lojista pode aplicar a itens, opcionalmente com desconto
+// automatico associado (ex.: "Promocao" com 20% off).
 export type OrganizerTag = {
   id: string
   name: string
@@ -61,6 +80,8 @@ export type OrganizerTag = {
   updatedAt: string
 }
 
+// Uma linha do feed "Atividade recente" do Organizador (criacao, edicao,
+// exclusao etc.), usada so para exibicao - nao afeta o conteudo em si.
 export type OrganizerActivity = {
   id: string
   label: string
@@ -69,6 +90,8 @@ export type OrganizerActivity = {
   createdAt: string
 }
 
+// Um registro na lixeira: guarda o objeto original completo (no ou tag) para
+// permitir restaurar exatamente como estava antes de ser excluido.
 export type OrganizerTrashEntry = {
   id: string
   kind: 'node' | 'tag'
@@ -77,6 +100,9 @@ export type OrganizerTrashEntry = {
   payload: OrganizerNode | OrganizerTag
 }
 
+// Estado completo do Organizador: a arvore de conteudo, as tags disponiveis,
+// o historico de atividades e a lixeira. E o formato salvo no backend e no
+// localStorage (ver useOrganizerStore).
 export type OrganizerStore = {
   nodes: OrganizerNode[]
   tags: OrganizerTag[]
@@ -84,6 +110,7 @@ export type OrganizerStore = {
   trash: OrganizerTrashEntry[]
 }
 
+// Rotulos em portugues exibidos na UI do Organizador para cada enum acima.
 export const organizerTypeLabels: Record<OrganizerContentType, string> = {
   page: 'Página',
   folder: 'Subpasta',
@@ -101,6 +128,9 @@ export const organizerStatusLabels: Record<OrganizerStatus, string> = {
   'low-stock': 'Pouco no estoque',
 }
 
+// Opcoes de status oferecidas no formulario de um "item" (produto) - "draft"
+// fica fora da lista por ser tratado como um estado interno/transicional, nao
+// uma escolha disponivel no form.
 export const organizerItemStatusOptions: OrganizerStatus[] = [
   'published',
   'coming-soon',
@@ -114,15 +144,24 @@ export const organizerSizeLabels: Record<OrganizerSize, string> = {
   large: 'Grande',
 }
 
+// Percentuais de desconto pre-definidos oferecidos ao criar/editar uma tag
+// com desconto automatico.
 export const organizerDiscountOptions = [10, 20, 30, 40, 50, 60] as const
 
+// Aplica um percentual de desconto (ex.: o da tag do item) sobre um preco.
+// Sem percentual definido, devolve o preco original sem alteracao.
 export function getOrganizerDiscountedPrice(price: number, percent?: number) {
   if (!percent) return price
   return price - (price * percent) / 100
 }
 
+// As tres etapas do assistente de criacao rapida de item (dados basicos,
+// fotos, organizacao/precificacao).
 export type ItemWizardStep = 1 | 2 | 3
 
+// Estado (ainda em formato de formulario, com numeros como string) do
+// assistente de criacao de item - so vira um OrganizerNode de verdade quando
+// o wizard e concluido e os campos sao convertidos/validados.
 export type ItemWizardDraft = {
   name: string
   photos: string[]
@@ -139,6 +178,9 @@ export type ItemWizardDraft = {
   placementIds: string[]
 }
 
+// Estado inicial (vazio) do assistente de criacao de item, ja associado a
+// pasta-pai e, opcionalmente, com os locais de exibicao pre-marcados
+// (herdados do defaultPlacementIds da pasta, se ela tiver essa opcao ligada).
 export function emptyItemWizardDraft(parentId: string, placementIds: string[] = []): ItemWizardDraft {
   return {
     name: '',
@@ -157,6 +199,9 @@ export function emptyItemWizardDraft(parentId: string, placementIds: string[] = 
   }
 }
 
+// Timestamp unico compartilhado por todo o seed abaixo - so precisa de um
+// valor valido de createdAt/updatedAt, a loja de verdade substitui isso
+// assim que o lojista comeca a editar.
 const now = new Date().toISOString()
 
 // Seed neutro de categorias - o lojista reorganiza/renomeia tudo pelo
@@ -209,6 +254,8 @@ export const itensRootNode: OrganizerNode = {
   updatedAt: now,
 }
 
+// Nomes dos sete carrosseis de produtos padrao da home (os "modulos
+// automaticos" que o backend preenche com base em comportamento/estoque).
 const homeModuleNames = [
   'Visto recentemente',
   'Acabaram de chegar',
@@ -219,6 +266,9 @@ const homeModuleNames = [
   'Produtos a partir de X preço',
 ]
 
+// Monta os nos padrao da home: banner de topo, 4 carrosseis, a faixa de
+// marcas no meio e mais 3 carrosseis depois dela - a ordem nesta lista e a
+// ordem de exibicao na pagina.
 const homeModules: OrganizerNode[] = [
   {
     id: 'home-promotional-banners',
@@ -290,6 +340,9 @@ const homeModules: OrganizerNode[] = [
   })),
 ]
 
+// Para cada pagina de categoria (exceto a home), cria um banner de destaque
+// e uma grade de produtos - o par minimo que toda pagina de categoria precisa
+// pra nao ficar vazia assim que e criada.
 const categoryModules: OrganizerNode[] = sitePages
   .filter((page) => page.id !== 'home')
   .flatMap((page) => [
@@ -329,6 +382,9 @@ const categoryModules: OrganizerNode[] = sitePages
     },
   ])
 
+// Store "de fabrica" usada quando uma loja ainda nao tem nenhum dado salvo -
+// ja vem com a estrutura minima de paginas e modulos para o site nao ficar
+// vazio antes do lojista customizar qualquer coisa.
 export const initialOrganizerStore: OrganizerStore = {
   nodes: [...sitePages, itensRootNode, ...homeModules, ...categoryModules],
   tags: [],
@@ -336,6 +392,9 @@ export const initialOrganizerStore: OrganizerStore = {
   trash: [],
 }
 
+// Gera um id unico prefixado (ex.: "item-<uuid>"), usando crypto.randomUUID
+// quando disponivel e caindo no timestamp atual como alternativa simples
+// (navegadores antigos ou contextos sem crypto).
 export function createOrganizerId(prefix: string) {
   const id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`
   return `${prefix}-${id}`
@@ -352,6 +411,8 @@ export function generateItemSku() {
   return `SKU-${random}`.toUpperCase()
 }
 
+// Normaliza um texto para comparacao de busca: remove acentos e caixa, pra
+// "A\u00e7a\u00ed" e "acai" serem considerados a mesma busca.
 export function normalizeOrganizerSearch(value: string) {
   return value
     .normalize('NFD')
@@ -360,14 +421,22 @@ export function normalizeOrganizerSearch(value: string) {
     .trim()
 }
 
+// Um no e visivel ao publico quando nao esta em rascunho - os demais status
+// (publicado, em breve, esgotado, pouco estoque) aparecem no site, so com
+// apresentacoes diferentes.
 export function isOrganizerNodeVisible(node: OrganizerNode) {
   return node.status !== 'draft'
 }
 
+// Detecta o modo de preview do Organizador pela query string (?preview=organizer),
+// que faz o site mostrar conteudo em rascunho para o lojista revisar antes de publicar.
 export function isOrganizerPreviewMode(search: string) {
   return new URLSearchParams(search).get('preview') === 'organizer'
 }
 
+// Acrescenta o parametro de preview a um path interno, preservando os demais
+// query params e o hash. Usa um dominio fake como base so para poder usar a
+// API de URL com paths relativos.
 export function withOrganizerPreview(path: string, previewMode: boolean) {
   if (!previewMode) return path
   const url = new URL(path, 'https://organizer.local')
@@ -375,10 +444,16 @@ export function withOrganizerPreview(path: string, previewMode: boolean) {
   return `${url.pathname}${url.search}${url.hash}`
 }
 
+// Um no esta disponivel para quem esta vendo agora se o modo preview estiver
+// ligado (ve tudo, inclusive rascunhos) ou se o no ja for publicamente visivel.
 export function isOrganizerNodeAvailable(node: OrganizerNode, previewMode: boolean) {
   return previewMode || isOrganizerNodeVisible(node)
 }
 
+// Sobe na arvore a partir de um no (ou id) ate achar a pagina ancestral mais
+// proxima - usado para saber em qual rota um modulo/item deve aparecer. O
+// Set `visited` protege contra um loop infinito caso a arvore tenha uma
+// referencia circular de parentId (nao deveria acontecer, mas evita travar o app).
 export function findOrganizerPage(nodes: OrganizerNode[], nodeOrId: OrganizerNode | string) {
   let current = typeof nodeOrId === 'string' ? nodes.find((node) => node.id === nodeOrId) : nodeOrId
   const visited = new Set<string>()
@@ -391,6 +466,10 @@ export function findOrganizerPage(nodes: OrganizerNode[], nodeOrId: OrganizerNod
   return current?.type === 'page' ? current : undefined
 }
 
+// Lista os modulos (carrosseis, destaques, catalogos) exibidos em uma
+// pagina, "achatando" subpastas recursivamente - uma subpasta nao e exibida
+// diretamente, so serve para organizar; o que aparece na pagina sao os nos
+// de conteudo dentro dela (e dentro das subpastas dela, e assim por diante).
 export function getOrganizerPageModules(nodes: OrganizerNode[], pageId: string) {
   const modules: OrganizerNode[] = []
   const visited = new Set<string>()

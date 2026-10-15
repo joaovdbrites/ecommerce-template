@@ -1,5 +1,6 @@
 import type { CheckoutForm } from '../types/checkout'
 
+// Estado inicial (vazio) do formulario de checkout.
 export const CHECKOUT_INITIAL_FORM: CheckoutForm = {
   customerName: '',
   customerEmail: '',
@@ -16,6 +17,9 @@ export const CHECKOUT_INITIAL_FORM: CheckoutForm = {
   couponCode: '',
 }
 
+// Configuracao de metodos de pagamento passada ao SDK do Mercado Pago - os
+// arrays vazios liberam "todos" os emissores/bandeiras daquele metodo (so
+// seriam usados para excluir algum especifico).
 export const PAYMENT_METHODS_CONFIG = {
   creditCard: 'all',
   bankTransfer: 'all',
@@ -34,6 +38,8 @@ export function toWhatsappDigits(phone: string): string {
   return digits.length <= 11 ? `55${digits}` : digits
 }
 
+// Formata digitos de telefone progressivamente como "(DD) DDDDD-DDDD"
+// enquanto o usuario digita (funciona tambem para numeros parciais).
 export function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 11)
   if (digits.length <= 2) return digits
@@ -41,6 +47,8 @@ export function formatPhone(value: string): string {
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
 }
 
+// Formata digitos de CPF progressivamente como "DDD.DDD.DDD-DD" enquanto o
+// usuario digita.
 export function formatCPF(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 11)
   if (digits.length <= 3) return digits
@@ -49,6 +57,8 @@ export function formatCPF(value: string): string {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`
 }
 
+// Traduz o codigo de motivo de recusa do Mercado Pago para uma mensagem em
+// portugues que o cliente entende; codigo desconhecido cai numa mensagem generica.
 export function rejectionMessage(detail?: string): string {
   const reasons: Record<string, string> = {
     cc_rejected_insufficient_amount: 'Saldo insuficiente no cartao.',
@@ -75,6 +85,8 @@ export function storeWhatsappMessage(deliveryMode: string, orderId: string): str
     : `Ola! Acabei de finalizar um pedido${orderRef} para entrega. Podemos combinar os detalhes?`
 }
 
+// Mensagem exibida quando o cliente volta do checkout do Mercado Pago com um
+// status na URL (fluxo de redirect, nao o pagamento embutido via cartao).
 export function paymentReturnMessage(status: string | null) {
   if (status === 'success') return 'Pagamento aprovado! Seu pedido está sendo processado.'
   if (status === 'failure') return 'Pagamento recusado. Tente novamente.'
@@ -82,6 +94,8 @@ export function paymentReturnMessage(status: string | null) {
   return ''
 }
 
+// Avalia a forca de uma senha por uma pontuacao simples (comprimento +
+// variedade de caracteres) e devolve um rotulo/cor prontos para o indicador visual.
 export function getPasswordStrength(password: string): { score: number; label: string; color: string } {
   if (!password) return { score: 0, label: '', color: '' }
 
@@ -98,6 +112,8 @@ export function getPasswordStrength(password: string): { score: number; label: s
   return { score, label: 'Forte', color: 'text-emerald-600' }
 }
 
+// Valida os campos obrigatorios do formulario de checkout antes de enviar o
+// pedido, devolvendo a lista de mensagens de erro encontradas (vazia = formulario valido).
 export function validateCheckoutForm(form: CheckoutForm) {
   const errors: string[] = []
 
@@ -116,6 +132,10 @@ export function validateCheckoutForm(form: CheckoutForm) {
   return { valid: errors.length === 0, errors }
 }
 
+// Valida um CPF pelo algoritmo oficial dos digitos verificadores (posicoes 9
+// e 10): recalcula cada digito a partir dos anteriores e compara com o que
+// foi informado. Tambem rejeita sequencias repetidas (ex. "111.111.111-11"),
+// que passariam no calculo mas nunca sao CPFs reais validos.
 function isValidCPF(cpf: string): boolean {
   if (cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false
 

@@ -15,6 +15,10 @@ import {
   type OrganizerVariant,
 } from '../types/organizer'
 
+// Chave do localStorage onde a copia local da estrutura do Organizador fica
+// guardada, nome do evento customizado usado para avisar outras instancias
+// do hook (na mesma aba) de uma mudanca, e quantas atividades recentes ficam
+// "visiveis" antes de contar como duplicata (ver dedupeStoredActivities).
 const STORAGE_KEY = 'store-organizer-v1'
 const SYNC_EVENT = 'store-organizer-sync'
 const VISIBLE_RECENT_LIMIT = 7
@@ -31,10 +35,16 @@ function withinEditCooldown() {
   return Date.now() - lastLocalEditAt < REMOTE_APPLY_COOLDOWN_MS
 }
 
+// Comparacao "profunda" barata via serializacao - a store inteira e pequena
+// o bastante pra isso ser mais simples (e confiavel) que um deep-equal manual.
 function storesAreEqual(left: OrganizerStore, right: OrganizerStore) {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
+// Remove atividades repetidas (mesmo label+detail) enquanto ainda estiverem
+// dentro da janela "visivel" do feed, e limita o historico total a 50
+// entradas - evita, por ex., que salvar o mesmo campo varias vezes em
+// sequencia polua o feed de atividades com linhas identicas.
 function dedupeStoredActivities(entries: OrganizerActivity[]) {
   const result: OrganizerActivity[] = []
   entries.forEach((entry) => {
@@ -46,6 +56,11 @@ function dedupeStoredActivities(entries: OrganizerActivity[]) {
   return result.slice(0, 50)
 }
 
+// Le e normaliza a store do Organizador a partir do localStorage. Alem de
+// desserializar, reconcilia a estrutura salva com os nos padrao (initialOrganizerStore)
+// pra lojas antigas ganharem automaticamente nos/campos novos sem perder o
+// que o lojista ja customizou. Qualquer falha (JSON invalido, etc.) cai de
+// volta na store inicial em vez de quebrar o site.
 function loadOrganizerStore(): OrganizerStore {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -53,6 +68,10 @@ function loadOrganizerStore(): OrganizerStore {
 
     const parsed = JSON.parse(saved) as Partial<OrganizerStore>
     const savedNodes = Array.isArray(parsed.nodes) ? parsed.nodes : []
+    // Se nem o no "home" existe, a estrutura salva e de antes do Organizador
+    // existir (ou esta corrompida) - nesse caso, parte dos nos padrao e so
+    // aplica por cima qualquer dado salvo que corresponda por id, preservando
+    // campos estruturais (rota, variante, builtin, immutable) do padrao.
     const hasOrganizerStructure = savedNodes.some((node) => node.id === 'home')
     const sourceNodes = hasOrganizerStructure
       ? savedNodes
@@ -70,6 +89,10 @@ function loadOrganizerStore(): OrganizerStore {
           ),
         ]
 
+    // Preenche campos ausentes de cada no salvo (migracoes incrementais) com
+    // os defaults correspondentes (quando o no e um dos builtin) ou com um
+    // valor neutro, garantindo que o objeto final sempre bata com o tipo
+    // OrganizerNode mesmo que o JSON salvo seja de uma versao mais antiga.
     const normalizedNodes = sourceNodes.map((node) => {
       const defaults = initialOrganizerStore.nodes.find((candidate) => candidate.id === node.id)
       const variant =
@@ -95,6 +118,9 @@ function loadOrganizerStore(): OrganizerStore {
       } as OrganizerNode
     })
 
+    // Correcao de dados antigos: paginas duplicadas com rota "/" (alem da
+    // "home" oficial) sao descartadas, e qualquer no que apontava pra elas
+    // como pai e realocado para "home" em vez de ficar orfao.
     const duplicateRootIds = new Set(
       normalizedNodes
         .filter((node) => node.type === 'page' && node.route === '/' && node.id !== 'home')
@@ -121,6 +147,8 @@ function loadOrganizerStore(): OrganizerStore {
   }
 }
 
+// Monta uma entrada de atividade pronta pra entrar no feed "Atividade
+// recente" do Organizador, com id e timestamp gerados na hora.
 function activity(label: string, detail: string, targetId: string | null): OrganizerActivity {
   return {
     id: createOrganizerId('activity'),
@@ -131,6 +159,9 @@ function activity(label: string, detail: string, targetId: string | null): Organ
   }
 }
 
+// Adiciona uma atividade nova no topo do feed da store, substituindo uma
+// entrada igual (mesmo label+detail) se ela ainda estiver na janela visivel -
+// evita que a mesma acao repetida em sequencia rapida vire varias linhas.
 function withActivity(store: OrganizerStore, nextActivity: OrganizerActivity): OrganizerStore {
   const visibleDuplicate = store.activities
     .slice(0, VISIBLE_RECENT_LIMIT)
@@ -142,6 +173,9 @@ function withActivity(store: OrganizerStore, nextActivity: OrganizerActivity): O
   return { ...store, activities: [nextActivity, ...activities].slice(0, 50) }
 }
 
+// Campos aceitos para criar um no novo no Organizador (pagina, pasta,
+// carrossel, catalogo, destaque ou item) - um subconjunto de OrganizerNode,
+// ja que varios campos (id, timestamps, rota final) sao calculados por createNode.
 export type CreateOrganizerNodeInput = {
   name: string
   type: OrganizerContentType
@@ -163,14 +197,35 @@ export type CreateOrganizerNodeInput = {
   pixDiscountPercent?: number
 }
 
+// Hook central que mantem a estrutura do Organizador (paginas, pastas,
+// carrosseis, catalogos, destaques e itens) sincronizada entre: o estado em
+// memoria desta instancia, o localStorage (cache local e canal de sync entre
+// abas), e o backend (fonte da verdade compartilhada entre dispositivos).
+// E instanciado em varios lugares ao mesmo tempo (admin + preview do site),
+// entao grande parte da logica aqui existe pra evitar que essas instancias
+// pisem umas nas outras ou apliquem dados desatualizados por cima de edicoes
+// recentes. Devolve o estado da store mais as acoes de CRUD sobre ela.
 export function useOrganizerStore(token?: string) {
   const [store, setStore] = useState<OrganizerStore>(loadOrganizerStore)
+  // true assim que a primeira resposta do servidor (sucesso ou falha) chega -
+  // usado para destravar efeitos que nao devem rodar com dados so locais.
   const [remoteReady, setRemoteReady] = useState(false)
+  // Espelha `store` para ser lido de dentro de callbacks/efeitos sem precisar
+  // declarar `store` como dependencia (evitaria recriar o efeito a cada edicao).
   const storeRef = useRef(store)
+  // true entre uma edicao local e o PUT correspondente ter sido confirmado -
+  // enquanto isso, respostas remotas (poll ou evento de outra aba) sao ignoradas
+  // pra nao sobrescrever a edicao que ainda nao foi salva no servidor.
   const pendingLocalSave = useRef(false)
+  // Contador incrementado a cada edicao local; usado pelo polling para
+  // detectar se uma edicao aconteceu enquanto uma requisicao GET estava em
+  // voo, e nesse caso descartar a resposta (pode estar desatualizada).
   const localRevision = useRef(0)
   const hasSyncedWithServer = useRef(false)
+  // Trava simples para garantir no maximo um PUT em voo por vez (ver flushPendingPut).
   const isPutInFlight = useRef(false)
+  // Guarda so o snapshot mais recente ainda nao enviado - varias edicoes
+  // rapidas colapsam em um unico PUT com o estado final.
   const latestSnapshotToPut = useRef<OrganizerStore | null>(null)
   const isOrganizerRoute = window.location.pathname === '/admin'
   // Salvar (PUT) agora exige o token de administrador; ler (GET) continua
@@ -180,6 +235,10 @@ export function useOrganizerStore(token?: string) {
     tokenRef.current = token
   }, [token])
 
+  // Wrapper em volta de setStore usado por toda edicao local: alem de
+  // atualizar o estado, marca que ha uma edicao pendente de salvar, avanca a
+  // revisao local e registra o instante da edicao (pro cooldown de
+  // aplicacao remota). So mexe nesses marcadores quando o conteudo de fato mudou.
   const setLocalStore = (updater: SetStateAction<OrganizerStore>) => {
     setStore((current) => {
       const next =
@@ -196,10 +255,16 @@ export function useOrganizerStore(token?: string) {
     })
   }
 
+  // Mantem storeRef sempre apontando para o store mais recente.
   useEffect(() => {
     storeRef.current = store
   }, [store])
 
+  // Escuta os dois canais de sincronizacao entre instancias/abas: o evento
+  // customizado SYNC_EVENT (mesma aba, outras instancias do hook) e o evento
+  // nativo "storage" (outras abas). Em ambos os casos, uma edicao local
+  // pendente ou o cooldown pos-edicao bloqueia a aplicacao do dado recebido,
+  // pra nao sobrescrever algo que acabou de ser alterado aqui.
   useEffect(() => {
     const handleSync = (event: Event) => {
       const nextStore = (event as CustomEvent<OrganizerStore>).detail
@@ -220,6 +285,9 @@ export function useOrganizerStore(token?: string) {
     }
   }, [])
 
+  // Toda vez que o store muda, propaga para as outras instancias: grava no
+  // localStorage (so na rota do admin, que e quem deve ser a fonte local) e
+  // dispara o evento customizado pras instancias na mesma aba (ex.: preview).
   useEffect(() => {
     if (isOrganizerRoute) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
@@ -227,9 +295,15 @@ export function useOrganizerStore(token?: string) {
     window.dispatchEvent(new CustomEvent<OrganizerStore>(SYNC_EVENT, { detail: store }))
   }, [isOrganizerRoute, store])
 
+  // Efeito principal de sincronizacao com o backend: faz uma busca inicial
+  // (podendo inicializar o servidor se ele ainda nao tiver dados) e depois
+  // faz polling periodico para pegar mudancas feitas em outros dispositivos.
   useEffect(() => {
     let cancelled = false
 
+    // Aplica uma store vinda do servidor por cima do estado local, respeitando
+    // o cooldown/edicao pendente (ver comentario abaixo) para nao perder uma
+    // edicao que acabou de ser feita aqui.
     const applyRemoteStore = (remoteStore: OrganizerStore) => {
       // Antes da primeira sincronizacao, o estado local e so o esqueleto padrao
       // (loadOrganizerStore ainda nao confirmou os dados reais) - uma edicao feita
@@ -239,19 +313,30 @@ export function useOrganizerStore(token?: string) {
       hasSyncedWithServer.current = true
 
       if (isOrganizerRoute) {
+        // No admin, grava no localStorage primeiro e re-le com loadOrganizerStore
+        // para passar pela mesma normalizacao usada no boot (preenche campos
+        // que porventura faltem no dado vindo do servidor).
         localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteStore))
         const normalizedStore = loadOrganizerStore()
         setStore((current) => (storesAreEqual(current, normalizedStore) ? current : normalizedStore))
         return
       }
+      // Fora do admin (preview do site), aplica o dado remoto direto, sem
+      // persistir local - essas instancias so leem.
       setStore((current) => (storesAreEqual(current, remoteStore) ? current : remoteStore))
     }
 
+    // Busca o estado atual do servidor; se ele ainda nao tiver nada e
+    // `allowInitialize` for true (so faz sentido no admin), envia o estado
+    // local atual como ponto de partida - e assim que uma loja nova "semeia"
+    // o backend na primeira visita ao admin.
     const syncFromServer = async (allowInitialize: boolean) => {
       const revisionAtStart = localRevision.current
       try {
         const remoteStore = await api.get<OrganizerStore | null>('/organizer')
         if (cancelled) return
+        // Uma edicao local aconteceu enquanto o GET estava em voo - descarta
+        // essa resposta, que pode nao refletir mais o estado mais recente.
         if (revisionAtStart !== localRevision.current) return
 
         if (remoteStore && Array.isArray(remoteStore.nodes)) {
@@ -267,6 +352,8 @@ export function useOrganizerStore(token?: string) {
       }
     }
 
+    // Primeira sincronizacao pode inicializar o servidor; as seguintes
+    // (via polling a cada 2s) so leem e aplicam, nunca inicializam de novo.
     void syncFromServer(true)
     const interval = window.setInterval(() => void syncFromServer(false), 2_000)
 
@@ -325,8 +412,13 @@ export function useOrganizerStore(token?: string) {
     }
   }
 
+  // Cria um no novo (pagina, pasta, carrossel, catalogo, destaque ou item) e
+  // o adiciona a store local, registrando uma atividade. Devolve o id do no
+  // criado, que quem chamou costuma usar para navegar ate ele.
   function createNode(input: CreateOrganizerNodeInput) {
     const timestamp = new Date().toISOString()
+    // Gera um slug a partir do nome: remove acentos, poe em minusculas e
+    // troca qualquer coisa que nao seja letra/numero por hifen.
     const baseSlug = input.name
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
@@ -334,6 +426,8 @@ export function useOrganizerStore(token?: string) {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '')
     const requestedRoute = input.route?.trim()
+    // Se o usuario digitou uma rota propria, usa o ultimo segmento dela como
+    // slug preferido (mesmo tratamento de acentos/caixa do baseSlug acima).
     const requestedSlug = requestedRoute
       ?.split('/')
       .filter(Boolean)
@@ -346,6 +440,8 @@ export function useOrganizerStore(token?: string) {
     const baseRoute = `/pagina/${requestedSlug || baseSlug || 'nova-pagina'}`
     let pageRoute = baseRoute
     let routeSuffix = 2
+    // So paginas tem rota propria - se ja existir uma pagina com essa rota,
+    // vai incrementando um sufixo numerico ate achar uma rota livre.
     while (input.type === 'page' && store.nodes.some((existing) => existing.route === pageRoute)) {
       pageRoute = `${baseRoute}-${routeSuffix}`
       routeSuffix += 1
@@ -391,6 +487,8 @@ export function useOrganizerStore(token?: string) {
     return node.id
   }
 
+  // Cria uma tag nova (usada para marcar itens e, opcionalmente, aplicar um
+  // desconto automatico) e devolve o id criado.
   function createTag(name: string, color: string, discountPercent?: number) {
     const timestamp = new Date().toISOString()
     const tag: OrganizerTag = {
@@ -411,6 +509,9 @@ export function useOrganizerStore(token?: string) {
     return tag.id
   }
 
+  // Aplica atualizacoes parciais a um no existente. `log = false` e usado
+  // para mudancas que nao devem poluir o feed de atividades (ex.: ajustes
+  // automaticos internos em vez de uma edicao feita pelo lojista).
   function updateNode(id: string, updates: Partial<OrganizerNode>, log = true) {
     setLocalStore((current) => {
       const existing = current.nodes.find((node) => node.id === id)
@@ -424,6 +525,7 @@ export function useOrganizerStore(token?: string) {
     })
   }
 
+  // Aplica atualizacoes parciais a uma tag existente (nome, cor ou desconto).
   function updateTag(id: string, updates: Partial<OrganizerTag>) {
     setLocalStore((current) => {
       const existing = current.tags.find((tag) => tag.id === id)
@@ -442,10 +544,14 @@ export function useOrganizerStore(token?: string) {
   }
 
 
+  // So registra no feed de atividades que um no foi aberto no Organizador -
+  // nao muda nenhum dado do no em si.
   function recordAccess(id: string, label: string) {
     setLocalStore((current) => withActivity(current, activity(label, 'Aberto no organizador', id)))
   }
 
+  // Cria uma copia de um no existente (mesmos dados, nome com sufixo
+  // "- copia"). Devolve o id do novo no, ou null se o original nao existir mais.
   function duplicateNode(id: string) {
     const existing = store.nodes.find((node) => node.id === id)
     if (!existing) return null
@@ -463,6 +569,9 @@ export function useOrganizerStore(token?: string) {
     })
   }
 
+  // Reordena um no uma posicao para cima/baixo entre seus irmaos (mesmo
+  // parentId). Nos imutaveis (builtin que nao pode mover) bloqueiam o
+  // movimento, tanto o que esta sendo movido quanto o vizinho que ele trocaria de lugar.
   function moveNode(id: string, direction: 'up' | 'down') {
     setLocalStore((current) => {
       const currentNode = current.nodes.find((node) => node.id === id)
@@ -473,6 +582,8 @@ export function useOrganizerStore(token?: string) {
       const targetSibling = siblings[siblingIndex + (direction === 'up' ? -1 : 1)]
       if (!targetSibling || targetSibling.immutable) return current
 
+      // Troca as posicoes dos dois nos na lista completa (nao so entre os
+      // irmaos), preservando a ordem relativa de todo o resto.
       const sourceIndex = current.nodes.findIndex((node) => node.id === currentNode.id)
       const targetIndex = current.nodes.findIndex((node) => node.id === targetSibling.id)
       const nodes = [...current.nodes]
@@ -489,8 +600,14 @@ export function useOrganizerStore(token?: string) {
     })
   }
 
+  // Move um no e toda a sua descendencia (subpastas, itens dentro delas etc.)
+  // para a lixeira, de onde pode ser restaurado depois.
   function moveNodeToTrash(id: string) {
     setLocalStore((current) => {
+      // Acha todos os descendentes do no alvo em um loop de ponto fixo:
+      // a cada rodada, adiciona qualquer no cujo pai ja esteja no conjunto,
+      // repetindo ate uma rodada nao encontrar mais nenhum novo (cobre
+      // qualquer profundidade de aninhamento, nao so um nivel).
       const ids = new Set<string>([id])
       let foundNew = true
       while (foundNew) {
@@ -503,6 +620,8 @@ export function useOrganizerStore(token?: string) {
         })
       }
 
+      // Nos imutaveis (builtin que nao pode ser excluido) ficam de fora da
+      // selecao, mesmo que estivessem dentro da arvore marcada acima.
       const deleted = current.nodes.filter((node) => ids.has(node.id) && !node.immutable)
       if (deleted.length === 0) return current
       const deletedIds = new Set(deleted.map((node) => node.id))
@@ -535,6 +654,8 @@ export function useOrganizerStore(token?: string) {
     })
   }
 
+  // Move uma tag para a lixeira e remove a referencia dela de qualquer no
+  // que a usava (um item nao pode ficar marcado com uma tag que nao existe mais).
   function moveTagToTrash(id: string) {
     setLocalStore((current) => {
       const tag = current.tags.find((item) => item.id === id)
@@ -561,6 +682,7 @@ export function useOrganizerStore(token?: string) {
     })
   }
 
+  // Restaura uma entrada da lixeira (no ou tag) de volta para a arvore ativa.
   function restoreTrash(id: string) {
     setLocalStore((current) => {
       const entry = current.trash.find((item) => item.id === id)
@@ -570,6 +692,12 @@ export function useOrganizerStore(token?: string) {
       let nodes = current.nodes
       let tags = current.tags
 
+      // Restaura um no e, recursivamente, qualquer ancestral dele que
+      // tambem esteja na lixeira (ex.: restaurar um item cuja subpasta-pai
+      // tambem foi excluida) - sem isso o no voltaria com um parentId que
+      // nao existe mais na arvore. Se o ancestral nao estiver na lixeira
+      // (foi excluido definitivamente), o no e realocado para "home" em vez
+      // de ficar orfao.
       const restoreNode = (nodeEntry: OrganizerTrashEntry) => {
         trash = trash.filter((item) => item.id !== nodeEntry.id)
         let node = nodeEntry.payload as OrganizerNode
@@ -597,6 +725,9 @@ export function useOrganizerStore(token?: string) {
     })
   }
 
+  // Remove uma entrada da lixeira para sempre (sem volta), e limpa do feed
+  // de atividades qualquer entrada relacionada a ela (pelo id do alvo ou
+  // pelo label, que comeca com o nome do item excluido).
   function deleteTrashPermanently(id: string) {
     setLocalStore((current) => {
       const entry = current.trash.find((item) => item.id === id)
@@ -612,14 +743,18 @@ export function useOrganizerStore(token?: string) {
     })
   }
 
+  // Esvazia o feed de "Atividade recente" sem afetar nos, tags ou lixeira.
   function clearActivities() {
     setLocalStore((current) => ({ ...current, activities: [] }))
   }
 
+  // Descarta toda a customizacao e volta a store para o estado inicial
+  // (seed padrao de paginas/modulos) - usado para "zerar" o Organizador.
   function resetWorkspace() {
     setLocalStore(initialOrganizerStore)
   }
 
+  // Expoe o estado atual da store e todas as acoes de CRUD sobre ela.
   return {
     store,
     createNode,

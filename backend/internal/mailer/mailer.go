@@ -16,6 +16,7 @@ import (
 // ErrNotConfigured indica que a loja ainda nao tem SMTP preenchido no .env.
 var ErrNotConfigured = errors.New("envio de e-mail nao configurado")
 
+// Config traz os dados de conexao SMTP lidos do .env da loja.
 type Config struct {
 	Host     string
 	Port     string
@@ -25,10 +26,12 @@ type Config struct {
 	FromName string
 }
 
+// Mailer e o cliente de envio de e-mail usado pelo resto do backend.
 type Mailer struct {
 	cfg Config
 }
 
+// New cria um Mailer a partir da configuracao SMTP da loja.
 func New(cfg Config) *Mailer {
 	return &Mailer{cfg: cfg}
 }
@@ -39,6 +42,8 @@ func (m *Mailer) Configured() bool {
 	return m.cfg.Host != "" && m.cfg.From != ""
 }
 
+// Message e o conteudo de um e-mail a enviar, sempre com corpo em texto puro
+// e HTML (multipart/alternative) para clientes de e-mail antigos.
 type Message struct {
 	To        string
 	Subject   string
@@ -46,6 +51,9 @@ type Message struct {
 	HTMLBody  string
 }
 
+// Send abre uma conexao SMTP, autentica se houver usuario configurado e
+// envia a mensagem pelo protocolo cru (MAIL/RCPT/DATA), fechando a conexao
+// ao final.
 func (m *Mailer) Send(message Message) error {
 	if !m.Configured() {
 		return ErrNotConfigured
@@ -63,6 +71,8 @@ func (m *Mailer) Send(message Message) error {
 	}
 	defer client.Close()
 
+	// Autenticacao e opcional: alguns servidores SMTP internos aceitam envio
+	// sem usuario/senha.
 	if m.cfg.User != "" {
 		auth := smtp.PlainAuth("", m.cfg.User, m.cfg.Password, m.cfg.Host)
 		if err := client.Auth(auth); err != nil {
@@ -70,6 +80,8 @@ func (m *Mailer) Send(message Message) error {
 		}
 	}
 
+	// Sequencia classica do protocolo SMTP: remetente, destinatario e so
+	// depois o corpo da mensagem.
 	if err := client.Mail(m.cfg.From); err != nil {
 		return err
 	}
@@ -97,6 +109,7 @@ func (m *Mailer) Send(message Message) error {
 func (m *Mailer) dial(addr, port string) (*smtp.Client, error) {
 	tlsConfig := &tls.Config{ServerName: m.cfg.Host, MinVersion: tls.VersionTLS12}
 
+	// Porta 465: conexao ja nasce TLS (SMTPS).
 	if port == "465" {
 		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 15 * time.Second}, "tcp", addr, tlsConfig)
 		if err != nil {
@@ -105,6 +118,9 @@ func (m *Mailer) dial(addr, port string) (*smtp.Client, error) {
 		return smtp.NewClient(conn, m.cfg.Host)
 	}
 
+	// Demais portas: conecta em texto puro e sobe para TLS via STARTTLS se o
+	// servidor anunciar suporte - senao, segue sem criptografia (ex.: redes
+	// internas/dev).
 	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
 	if err != nil {
 		return nil, err
@@ -123,12 +139,17 @@ func (m *Mailer) dial(addr, port string) (*smtp.Client, error) {
 	return client, nil
 }
 
+// build monta a mensagem MIME crua (cabecalhos + corpo) que vai pelo DATA do
+// SMTP, com as partes texto e HTML separadas por boundary.
 func (m *Mailer) build(message Message) []byte {
+	// Nome de exibicao do remetente e opcional; precisa de QEncoding para
+	// acentos sobreviverem ao cabecalho de e-mail.
 	from := m.cfg.From
 	if m.cfg.FromName != "" {
 		from = fmt.Sprintf("%s <%s>", mime.QEncoding.Encode("utf-8", m.cfg.FromName), m.cfg.From)
 	}
 
+	// Boundary unico por mensagem para separar as partes text/html.
 	boundary := fmt.Sprintf("onperf-%d", time.Now().UnixNano())
 
 	var builder strings.Builder
@@ -138,10 +159,12 @@ func (m *Mailer) build(message Message) []byte {
 	builder.WriteString("MIME-Version: 1.0\r\n")
 	builder.WriteString(`Content-Type: multipart/alternative; boundary="` + boundary + "\"\r\n\r\n")
 
+	// Parte em texto puro, para clientes de e-mail sem suporte a HTML.
 	builder.WriteString("--" + boundary + "\r\n")
 	builder.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
 	builder.WriteString(message.PlainBody + "\r\n\r\n")
 
+	// Parte em HTML, preferida pela maioria dos clientes modernos.
 	builder.WriteString("--" + boundary + "\r\n")
 	builder.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
 	builder.WriteString(message.HTMLBody + "\r\n\r\n")

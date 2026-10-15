@@ -19,24 +19,31 @@ import {
 } from '../../../types/organizer'
 import { Button } from '../../../components/Button'
 
+// Header fixo da versao desktop: logo, busca, navegacao dinamica das paginas
+// do Organizador, menu da conta e os atalhos de pedidos/whatsapp/favoritos/carrinho.
 export function DesktopHeader() {
   const { items } = useCart()
   const { scope, token, openAuth, requireAuth, isAdmin, logout } = useAuth()
   const { store } = useOrganizerStore()
   const storeWhatsapp = useStoreWhatsapp()
   const { storeName, logoUrl } = useStoreTheme()
+  // Notificacoes de admin (so carregam/fazem sentido quando isAdmin é true)
   const { unread, notifications, loading, loadNotifications, markRead } = useAdminNotifications(
     isAdmin,
     token,
   )
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const isCustomer = scope === 'customer'
+  // Controla o header "encolhido" (esconde a barra de paginas) ao rolar a pagina
   const [scrolled, setScrolled] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  // Total de itens no carrinho, mostrado como badge no icone da sacola
   const count = items.reduce((sum, item) => sum + item.quantity, 0)
   const navigate = useNavigate()
   const location = useLocation()
+  // Modo preview do Organizador: mantem esse parametro propagado nos links
+  // internos pra nao perder o preview ao navegar pelo header
   const previewMode = isOrganizerPreviewMode(location.search)
   const homePath = withOrganizerPreview('/', previewMode)
   const currentPath = location.pathname.length > 1 ? location.pathname.replace(/\/+$/, '') : '/'
@@ -51,6 +58,7 @@ export function DesktopHeader() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  // Busca ainda nao filtra de verdade: so limpa o campo e manda pra home
   const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSearchTerm('')
@@ -63,6 +71,9 @@ export function DesktopHeader() {
       `text-[#FAF6EF]/70 hover:text-[#FAF6EF] ${isActive ? 'text-[#FAF6EF] after:scale-x-100' : ''}`,
     ].join(' ')
 
+  // Monta a lista de links de navegacao a partir das paginas cadastradas no
+  // Organizador, filtrando a pagina atual (nao faz sentido linkar pra onde ja esta)
+  // e respeitando o modo preview (paginas ainda nao publicadas).
   const customerLinks = store.nodes
     .filter((node) => {
       if (node.type !== 'page' || !node.route || !isOrganizerNodeAvailable(node, previewMode)) return false
@@ -138,6 +149,7 @@ export function DesktopHeader() {
 
           <div className="flex shrink-0 items-center gap-1 lg:gap-2 xl:gap-3">
             <div className="relative flex items-center rounded-[20px] lg:px-1 xl:px-4">
+              {/* Cliente logado ve o botao "Minha conta" com dropdown; visitante ve "Entrar" */}
               {isCustomer ? (
                 <>
                   <Button
@@ -177,6 +189,7 @@ export function DesktopHeader() {
                         navigate('/conta?tab=addresses')
                       }}
                     />
+                    {/* Atalho pro painel do Organizador, só pra quem é admin */}
                     {isAdmin ? (
                       <AccountMenuItem
                         icon={<LayoutDashboard size={16} />}
@@ -199,6 +212,7 @@ export function DesktopHeader() {
                     />
                   </div>
 
+                  {/* Overlay invisivel pra fechar o menu ao clicar fora dele */}
                   {accountMenuOpen ? (
                     <div
                       aria-hidden="true"
@@ -220,6 +234,7 @@ export function DesktopHeader() {
             </div>
 
             <div className="flex items-center gap-1 rounded-[20px] lg:gap-2 lg:px-1 xl:gap-3 xl:px-3">
+              {/* Sino de notificacoes so aparece pra admin */}
               {isAdmin ? (
                 <button
                   type="button"
@@ -309,6 +324,8 @@ export function DesktopHeader() {
           </div>
         </div>
 
+        {/* Barra com os links das paginas do site: encolhe (max-h-0) quando
+            scrolled, dando lugar a um header mais compacto */}
         <div
           className={[
             'overflow-hidden transition-all duration-300 ease-in-out',
@@ -332,6 +349,7 @@ export function DesktopHeader() {
         </div>
       </div>
 
+      {/* Gaveta lateral com a lista de notificacoes, só montada pra admin */}
       {isAdmin ? (
         <NotificationsDrawer
           open={notificationsOpen}
@@ -346,6 +364,7 @@ export function DesktopHeader() {
   )
 }
 
+// Item de linha reutilizado dentro do dropdown "Minha conta" (icone + label)
 function AccountMenuItem({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
   return (
     <button

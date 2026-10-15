@@ -25,11 +25,15 @@ func RateLimit(name string, limit int, window time.Duration) gin.HandlerFunc {
 	)
 
 	return func(c *gin.Context) {
+		// Uma janela por combinacao nome-da-rota + IP, para o limite de uma
+		// rota nao consumir o balde de outra.
 		key := name + "|" + c.ClientIP()
 		now := time.Now()
 		cutoff := now.Add(-window)
 
 		mu.Lock()
+		// Faxina periodica: remove do mapa os IPs que nao batem ha mais de uma
+		// janela, para o mapa nao crescer pra sempre num servidor de vida longa.
 		if now.Sub(lastGC) > gcEvery {
 			for storedKey, times := range hits {
 				if len(times) == 0 || times[len(times)-1].Before(cutoff) {
@@ -39,6 +43,7 @@ func RateLimit(name string, limit int, window time.Duration) gin.HandlerFunc {
 			lastGC = now
 		}
 
+		// Descarta os acessos fora da janela atual antes de contar.
 		kept := hits[key][:0]
 		for _, at := range hits[key] {
 			if at.After(cutoff) {
@@ -46,6 +51,8 @@ func RateLimit(name string, limit int, window time.Duration) gin.HandlerFunc {
 			}
 		}
 
+		// Estourou o limite: bloqueia com 429 e diz quanto tempo falta ate a
+		// janela liberar de novo (Retry-After + mensagem legivel em pt-BR).
 		if len(kept) >= limit {
 			retryAfter := int(math.Ceil((window - now.Sub(kept[0])).Seconds()))
 			if retryAfter < 1 {
@@ -61,6 +68,7 @@ func RateLimit(name string, limit int, window time.Duration) gin.HandlerFunc {
 			return
 		}
 
+		// Dentro do limite: registra esse acesso e deixa a requisicao seguir.
 		hits[key] = append(kept, now)
 		mu.Unlock()
 
@@ -68,6 +76,8 @@ func RateLimit(name string, limit int, window time.Duration) gin.HandlerFunc {
 	}
 }
 
+// humanizeSeconds transforma a contagem regressiva em texto legivel ("30
+// segundos", "2 minutos") para a mensagem de erro do rate limit.
 func humanizeSeconds(seconds int) string {
 	if seconds < 60 {
 		return fmt.Sprintf("%d segundos", seconds)

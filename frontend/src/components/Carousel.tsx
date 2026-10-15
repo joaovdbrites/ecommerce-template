@@ -26,11 +26,14 @@ export function Carousel<Item>({
   loop = true,
   renderItem,
 }: CarouselProps<Item>) {
+  // Se os itens cabem todos na tela, nao ha porque duplicar nem fazer loop.
   const [hasOverflow, setHasOverflow] = useState(false)
   const shouldLoop = loop && items.length > 0 && hasOverflow
   const { ref, dragging, handlers } = useDragScroll<HTMLDivElement>({
     loopItemCount: shouldLoop ? items.length : 0,
   })
+  // Com loop, triplica os itens (antes/meio/depois) para poder rolar nos dois
+  // sentidos sem bater na borda da lista.
   const renderedItems = shouldLoop ? [...items, ...items, ...items] : items
   const widthClassName =
     fullBleed === true
@@ -39,6 +42,8 @@ export function Carousel<Item>({
         ? 'left-1/2 w-[100dvw] max-w-[100dvw] -translate-x-1/2 sm:left-0 sm:w-full sm:max-w-full sm:translate-x-0'
         : 'w-full max-w-full'
 
+  // Mede o conteudo para decidir se o carrossel precisa de loop: compara a
+  // largura de um unico conjunto de itens com a largura visivel do container.
   useEffect(() => {
     const element = ref.current
     if (!element || items.length === 0) {
@@ -86,6 +91,9 @@ export function Carousel<Item>({
       ].join(' ')}
     >
       {renderedItems.map((item, index) => {
+        // So o conjunto do meio e "real"; as copias antes/depois existem so
+        // para o efeito visual de loop e ficam escondidas de leitores de tela
+        // e da navegacao por teclado (aria-hidden + inert).
         const duplicate = shouldLoop && (index < items.length || index >= items.length * 2)
         return (
           <div

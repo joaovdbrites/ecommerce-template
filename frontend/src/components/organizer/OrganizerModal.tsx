@@ -14,6 +14,9 @@ import {
   type OrganizerStore,
 } from '../../types/organizer'
 
+// Qual "modo" o modal esta exibindo: criar um tipo de no do Organizador,
+// criar uma tag, mostrar a pre-visualizacao do visitante, ou escolher o
+// primeiro modulo de uma pagina nova. null = modal fechado.
 export type OrganizerModalMode =
   | OrganizerContentType
   | 'tag'
@@ -36,6 +39,7 @@ type OrganizerModalProps = {
 const fieldClass =
   'w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm text-[#2a0f3d] outline-none focus:border-[#b77717] focus:ring-2 focus:ring-[#fff1d6]'
 
+// Rotulo padrao usado acima de cada campo do formulario deste modal.
 function FieldLabel({ children }: { children: ReactNode }) {
   return (
     <span className="mb-1.5 block text-xs font-bold uppercase tracking-[0.14em] text-[#6b665f]">
@@ -44,6 +48,10 @@ function FieldLabel({ children }: { children: ReactNode }) {
   )
 }
 
+// Modal unico de criacao usado pelo Organizador: muda os campos exibidos
+// de acordo com `mode` (pagina, pasta, carrossel, catalogo, destaque, item,
+// tag, preview ou escolha de modulo). Mantem o formulario inteiro num unico
+// componente para reaproveitar o mesmo layout de janela em todos os casos.
 export function OrganizerModal({
   mode,
   store,
@@ -63,12 +71,18 @@ export function OrganizerModal({
       (node.type === 'page' && node.id !== 'itens') ||
       (node.type === 'folder' && findOrganizerPage(store.nodes, node)?.id !== 'itens'),
   )
+  // Itens validos para vincular a um carrossel/catalogo (precisam estar
+  // dentro de alguma pagina do site para fazer sentido serem exibidos).
   const items = store.nodes.filter((node) => node.type === 'item' && findOrganizerPage(store.nodes, node))
+  // Estado compartilhado do formulario - cada `mode` usa so um subconjunto
+  // desses campos (ver JSX abaixo), mas manter tudo junto simplifica o reset.
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [route, setRoute] = useState('')
   const [publicationStatus, setPublicationStatus] = useState<OrganizerNode['status']>('published')
   const [selectedParent, setSelectedParent] = useState(parentId || 'home')
+  // Reseta a pagina de destino selecionada sempre que o modal e reaberto com
+  // um parentId diferente (sem useEffect: compara direto durante o render).
   const [lastParentId, setLastParentId] = useState(parentId)
   if (parentId !== lastParentId) {
     setLastParentId(parentId)
@@ -81,6 +95,8 @@ export function OrganizerModal({
   const [itemIds, setItemIds] = useState<string[]>([])
   const [color, setColor] = useState('#d89a28')
   const [discountPercent, setDiscountPercent] = useState('')
+  // Sugestao de endereco (slug) gerada a partir do nome digitado, removendo
+  // acentos e caracteres especiais - usada como placeholder editavel do campo "rota".
   const suggestedRoute = `/pagina/${
     name
       .normalize('NFD')
@@ -90,6 +106,7 @@ export function OrganizerModal({
       .replace(/^-|-$/g, '') || 'nova-pagina'
   }`
 
+  // Titulo do cabecalho do modal, de acordo com o modo atual.
   const title =
     mode === 'tag'
       ? 'Criar tag'
@@ -99,10 +116,15 @@ export function OrganizerModal({
           ? 'Escolha o primeiro módulo'
           : `Criar ${organizerTypeLabels[mode].toLocaleLowerCase('pt-BR')}`
 
+  // Helper generico para marcar/desmarcar um valor dentro de uma lista de
+  // selecao (usado pelas grades de checkbox de tags e itens).
   function toggleValue(values: string[], value: string, setter: (next: string[]) => void) {
     setter(values.includes(value) ? values.filter((item) => item !== value) : [...values, value])
   }
 
+  // Envia o formulario: cria uma tag ou um no do Organizador dependendo do
+  // modo, monta o payload so com os campos relevantes para aquele tipo, e
+  // fecha o modal avisando quem chamou (onCreated) com o id criado.
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
     if (mode === 'preview' || mode === 'module-picker') return
@@ -135,6 +157,8 @@ export function OrganizerModal({
     onCreated('node', id)
   }
 
+  // Le um arquivo de imagem enviado pelo admin e guarda como data URL no
+  // campo imageUrl (alternativa a colar um endereco de imagem direto).
   function handleImageFile(file?: File) {
     if (!file) return
     const reader = new FileReader()
@@ -175,6 +199,10 @@ export function OrganizerModal({
           </button>
         </header>
 
+        {/* Corpo do modal muda por completo conforme o modo: preview mostra
+            a pagina como o visitante veria, module-picker mostra os cartoes
+            de escolha do primeiro modulo, e qualquer outro modo cai no
+            formulario generico de criacao mais abaixo. */}
         {mode === 'preview' ? (
           <PreviewContent store={store} selectedId={selectedId} />
         ) : mode === 'module-picker' ? (
@@ -228,6 +256,7 @@ export function OrganizerModal({
                     />
                   </label>
 
+                  {/* Tag nao tem descricao - todos os outros tipos de no tem. */}
                   {mode !== 'tag' ? (
                     <label>
                       <FieldLabel>Descrição</FieldLabel>
@@ -239,6 +268,8 @@ export function OrganizerModal({
                     </label>
                   ) : null}
 
+                  {/* Campos exclusivos de pagina: endereco (rota) e se ela entra
+                      na navegacao do site ja publicada ou como rascunho. */}
                   {mode === 'page' ? (
                     <>
                       <label>
@@ -275,6 +306,10 @@ export function OrganizerModal({
                     </>
                   ) : null}
 
+                  {/* Qualquer no que nao seja pagina nem tag precisa de um
+                      "container" pai e de um status de publicacao - exceto
+                      subpasta, que sempre vai para dentro de Itens (ver nota
+                      acima) e e sempre publicada. */}
                   {mode !== 'page' && mode !== 'tag' ? (
                     <>
                       {mode !== 'folder' && (
@@ -318,6 +353,8 @@ export function OrganizerModal({
                     </>
                   ) : null}
 
+                  {/* Campos exclusivos de tag: cor de exibicao e, opcionalmente,
+                      um percentual de desconto associado a ela. */}
                   {mode === 'tag' ? (
                     <>
                       <label>
@@ -350,6 +387,8 @@ export function OrganizerModal({
                     </>
                   ) : null}
 
+                  {/* Destaque e item tem imagem, por endereco (url) ou upload
+                      de arquivo - os dois escrevem no mesmo campo imageUrl. */}
                   {mode === 'highlight' || mode === 'item' ? (
                     <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                       <label>
@@ -381,6 +420,7 @@ export function OrganizerModal({
                     </div>
                   ) : null}
 
+                  {/* So destaque tem tamanho (afeta a altura do banner renderizado). */}
                   {mode === 'highlight' ? (
                     <label>
                       <FieldLabel>Tamanho do destaque</FieldLabel>
@@ -398,6 +438,7 @@ export function OrganizerModal({
                     </label>
                   ) : null}
 
+                  {/* So item tem preco e selecao de tags de desconto. */}
                   {mode === 'item' ? (
                     <>
                       <label>
@@ -421,6 +462,8 @@ export function OrganizerModal({
                     </>
                   ) : null}
 
+                  {/* Carrossel e catalogo escolhem seus produtos na criacao,
+                      a partir de todos os itens ja cadastrados no Organizador. */}
                   {mode === 'carousel' || mode === 'catalog' ? (
                     <ProductCheckboxGrid
                       title={mode === 'catalog' ? 'Produtos do catálogo' : 'Itens do carrossel'}
@@ -454,6 +497,8 @@ export function OrganizerModal({
   )
 }
 
+// Cartao de escolha exibido no modo "module-picker", para o admin decidir
+// qual o primeiro modulo (carrossel, destaque ou catalogo) de uma pagina nova.
 function ModuleChoice({
   icon,
   title,
@@ -478,6 +523,8 @@ function ModuleChoice({
   )
 }
 
+// Grade simples de checkboxes com rotulo generico (usada aqui para
+// associar tags a um item que esta sendo criado).
 function CheckboxGrid({
   title,
   empty,
@@ -519,6 +566,8 @@ function CheckboxGrid({
   )
 }
 
+// Grade de selecao de produtos com miniatura, nome e preco - usada para
+// escolher quais itens entram num carrossel ou catalogo recem-criado.
 function ProductCheckboxGrid({
   title,
   empty,
@@ -590,9 +639,14 @@ function ProductCheckboxGrid({
   )
 }
 
+// Conteudo do modo "preview": simula como o visitante veria a pagina do no
+// selecionado (ou a primeira pagina, se nada estiver selecionado), listando
+// so os modulos visiveis dela.
 function PreviewContent({ store, selectedId }: { store: OrganizerStore; selectedId: string | null }) {
   const selected = store.nodes.find((node) => node.id === selectedId)
   const page = selected ? findOrganizerPage(store.nodes, selected) : store.nodes[0]
+  // Modulos (carrossel/catalogo/destaque) visiveis dessa pagina, na mesma
+  // regra de visibilidade usada no site publico.
   const contents = page
     ? getOrganizerPageModules(store.nodes, page.id).filter((node) => isOrganizerNodeVisible(node))
     : []

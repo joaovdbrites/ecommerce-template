@@ -1,6 +1,8 @@
 import { getSessionId } from '../utils/sessionId'
 import { api } from './api'
 
+// Tipos de interacao do visitante com um produto que alimentam os carrosseis
+// automaticos da home.
 type ProductEventType = 'view' | 'click'
 
 /**

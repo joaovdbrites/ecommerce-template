@@ -21,6 +21,8 @@ interface ItemWizardProps {
   onFinish: () => void
 }
 
+// Le varios arquivos de imagem escolhidos de uma vez e devolve cada um como
+// data URL, na mesma ordem em que foram selecionados.
 function readFilesAsDataUrls(files: FileList): Promise<string[]> {
   return Promise.all(
     Array.from(files).map(
@@ -35,6 +37,10 @@ function readFilesAsDataUrls(files: FileList): Promise<string[]> {
   )
 }
 
+// Fluxo de cadastro de item em 3 etapas (nome -> fotos -> detalhes), usado
+// pelo Organizador quando o admin cria um novo item na pagina "Itens". O
+// estado do rascunho (draft) vive no componente pai; aqui so controlamos a
+// navegacao entre etapas e as validacoes de cada campo.
 export function ItemWizard({
   step,
   draft,
@@ -49,7 +55,10 @@ export function ItemWizard({
   const step1NameInputRef = useRef<HTMLInputElement>(null)
   const step3NameInputRef = useRef<HTMLInputElement>(null)
   const priceInputRef = useRef<HTMLInputElement>(null)
+  // Guarda qual campo obrigatorio falhou na validacao (nome na etapa 1/3,
+  // preco na etapa 3) para destacar o input e rolar ate ele.
   const [fieldError, setFieldError] = useState<'name' | 'price' | null>(null)
+  // Controla se a gaveta "Aparece em" (etapa 3) esta aberta ou fechada.
   const [appearsOpen, setAppearsOpen] = useState(false)
 
   // Mesma logica da gaveta "Aparece em" do painel de propriedades, so que
@@ -63,6 +72,7 @@ export function ItemWizard({
     list.push(block)
     placementsByPage.set(pageName, list)
   })
+  // Marca/desmarca um carrossel ou catalogo na selecao de "Aparece em" do draft.
   const togglePlacement = (blockId: string) => {
     const current = draft.placementIds
     const next = current.includes(blockId)
@@ -71,6 +81,8 @@ export function ItemWizard({
     onDraftChange({ placementIds: next })
   }
 
+  // Sempre que um campo obrigatorio falha na validacao, rola ate o input
+  // certo (de acordo com a etapa atual) e foca nele para o admin corrigir.
   useEffect(() => {
     if (fieldError === 'name' && step === 1) {
       step1NameInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -82,6 +94,8 @@ export function ItemWizard({
     }
   }, [fieldError, step])
 
+  // Valida nome e preco antes de finalizar o cadastro - se algum falhar,
+  // volta para a etapa onde o campo problematico fica visivel.
   const handleFinish = () => {
     if (!draft.name.trim()) {
       setFieldError('name')
@@ -97,6 +111,8 @@ export function ItemWizard({
     onFinish()
   }
 
+  // Converte os arquivos escolhidos em data URLs e acrescenta as fotos ja
+  // existentes no draft (nao substitui, so soma).
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return
     const newPhotos = await readFilesAsDataUrls(files)
@@ -107,6 +123,7 @@ export function ItemWizard({
     onDraftChange({ photos: draft.photos.filter((_, photoIndex) => photoIndex !== index) })
   }
 
+  // Progresso da barra no rodape, calculado so pela etapa atual (1 a 3).
   const progress = (step / 3) * 100
 
   return (
@@ -123,6 +140,7 @@ export function ItemWizard({
         </button>
       </div>
       <div className="p-6">
+        {/* Etapa 1: pergunta so o nome do produto, pra comecar o cadastro rapido. */}
         {step === 1 && (
           <div className="flex min-h-64 flex-col items-center justify-center text-center">
             <p className="mb-4 text-lg font-semibold text-[#3a164f]">Como se chama o produto?</p>
@@ -143,6 +161,8 @@ export function ItemWizard({
           </div>
         )}
 
+        {/* Etapa 2: upload de fotos - mostra botoes grandes de "adicionar"
+            quando ainda nao ha foto nenhuma, ou a grade de fotos ja enviadas. */}
         {step === 2 && (
           <div className="flex min-h-64 flex-col items-center justify-center gap-4 py-2">
             {draft.photos.length === 0 ? (
@@ -178,8 +198,11 @@ export function ItemWizard({
           </div>
         )}
 
+        {/* Etapa 3: detalhes completos do item (nome, descricao, status,
+            preco, estoque, marca, etc.) antes de finalizar o cadastro. */}
         {step === 3 && (
           <div className="mx-auto grid w-full max-w-xl gap-4">
+            {/* Miniatura principal + tira de miniaturas das demais fotos enviadas. */}
             <div className="flex gap-2">
               <div className="flex h-24 w-20 shrink-0 flex-col gap-2 overflow-y-auto">
                 {draft.photos.slice(1).map((photo, index) => (
@@ -224,6 +247,8 @@ export function ItemWizard({
               <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6b665f]">
                 Descrição
               </span>
+              {/* Textarea com auto-resize: a altura e recalculada a cada
+                  digitacao a partir do scrollHeight, pra crescer junto com o texto. */}
               <textarea
                 value={draft.description}
                 onChange={(event) => {
@@ -253,6 +278,8 @@ export function ItemWizard({
               </select>
             </label>
 
+            {/* So faz sentido escolher onde o item aparece quando ele ja vai
+                ser publicado - rascunho nao aparece em lugar nenhum do site. */}
             {draft.status !== 'draft' && (
               <div className="rounded-xl border border-stone-200 bg-white">
                 <button
@@ -303,6 +330,7 @@ export function ItemWizard({
               </div>
             )}
 
+            {/* Preco de venda (obrigatorio) e tag de desconto opcional. */}
             <div className="grid grid-cols-2 gap-3">
               <label>
                 <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6b665f]">
@@ -349,6 +377,8 @@ export function ItemWizard({
               </label>
             </div>
 
+            {/* Estoque disponivel e desconto no Pix - ambos opcionais, ver
+                hint logo abaixo sobre as regras de cada um. */}
             <div className="grid grid-cols-2 gap-3">
               <label>
                 <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6b665f]">
@@ -431,6 +461,8 @@ export function ItemWizard({
         )}
       </div>
 
+      {/* Input de arquivo escondido, acionado pelos botoes de "Adicionar fotos"
+          da etapa 2 via fileInputRef.current?.click(). */}
       <input
         ref={fileInputRef}
         type="file"
@@ -443,6 +475,7 @@ export function ItemWizard({
         }}
       />
 
+      {/* Barra de progresso do wizard, proporcional a etapa atual (1 a 3). */}
       <div className="mb-4 h-1.5 w-full rounded-full bg-[#ababab]">
         <div
           className="h-full rounded-full bg-[#d89a28] transition-[width]"
@@ -450,6 +483,8 @@ export function ItemWizard({
         />
       </div>
 
+      {/* Navegacao do wizard: "Voltar" cancela na etapa 1 ou recua uma etapa;
+          o botao da direita avanca ou finaliza, dependendo da etapa atual. */}
       <div className="flex items-center justify-between">
         <button
           type="button"
@@ -481,6 +516,8 @@ export function ItemWizard({
   )
 }
 
+// Grade de fotos ja enviadas na etapa 2: a primeira foto aparece grande em
+// cima, as demais em miniaturas menores logo abaixo.
 function PhotoGrid({ photos, onRemovePhoto }: { photos: string[]; onRemovePhoto: (index: number) => void }) {
   return (
     <div className="grid gap-2">
@@ -501,6 +538,7 @@ function PhotoGrid({ photos, onRemovePhoto }: { photos: string[]; onRemovePhoto:
   )
 }
 
+// Uma foto individual com botao de remover sobreposto no canto.
 function PhotoPreview({
   src,
   onRemove,

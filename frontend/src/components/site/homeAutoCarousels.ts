@@ -17,6 +17,8 @@ const AUTO_CAROUSEL_MODULE_IDS = {
   lowStock: 'home-products-6',
 } as const
 
+// Maior percentual de desconto entre as tags vinculadas ao item (0 se
+// nenhuma das tags do item tiver desconto).
 function bestDiscountPercent(node: OrganizerNode, tags: OrganizerTag[]) {
   return node.tagIds.reduce((best, tagId) => {
     const percent = tags.find((tag) => tag.id === tagId)?.discountPercent ?? 0
@@ -35,10 +37,14 @@ export function getHomeAutoItems(
   tags: OrganizerTag[],
   previewMode = false,
 ): Record<string, ItemCardContent[]> {
+  // So considera itens de verdade que estao disponiveis para exibicao (ou
+  // seja, respeita rascunho/publicado, exceto no Modo visitante de preview).
   const available = nodes.filter(
     (node) => node.type === 'item' && isOrganizerNodeAvailable(node, previewMode),
   )
 
+  // Registra quem ja foi usado em algum carrossel automatico, pra um mesmo
+  // item nao se repetir em dois carrosseis ao mesmo tempo.
   const used = new Set<string>()
   const take = (list: OrganizerNode[]) => {
     const picked: ItemCardContent[] = []
@@ -51,6 +57,7 @@ export function getHomeAutoItems(
     return picked
   }
 
+  // Itens em oferta, dos com maior desconto para os com menor.
   const onSale = take(
     available
       .filter((node) => bestDiscountPercent(node, tags) > 0)
@@ -62,10 +69,13 @@ export function getHomeAutoItems(
   // aqui e so ler esse status em vez de comparar com um estoque cadastrado.
   const lowStock = take(available.filter((node) => node.status === 'low-stock'))
 
+  // Itens mais recentes primeiro (data de criacao decrescente).
   const newArrivals = take(
     [...available].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
   )
 
+  // So inclui no resultado os carrosseis que de fato tiverem algum item -
+  // um carrossel vazio nao deve aparecer na home.
   const result: Record<string, ItemCardContent[]> = {}
   if (onSale.length) result[AUTO_CAROUSEL_MODULE_IDS.onSale] = onSale
   if (lowStock.length) result[AUTO_CAROUSEL_MODULE_IDS.lowStock] = lowStock
@@ -79,6 +89,8 @@ export function getOrganizerBrands(nodes: OrganizerNode[], previewMode = false) 
   const brands = nodes
     .filter((node) => node.type === 'item' && isOrganizerNodeAvailable(node, previewMode))
     .map((node) => node.brand?.trim())
+    // Descarta itens sem marca preenchida.
     .filter((brand): brand is string => Boolean(brand))
+  // Remove duplicatas - cada marca aparece uma unica vez na faixa.
   return Array.from(new Set(brands))
 }

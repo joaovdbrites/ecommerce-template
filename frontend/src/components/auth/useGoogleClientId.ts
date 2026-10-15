@@ -5,6 +5,8 @@ import { api } from '../../services/api'
 // credencial em Configuracoes > API no admin basta, sem rebuild nem restart.
 let clientIdPromise: Promise<string> | null = null
 
+// Busca o client id uma unica vez e reaproveita a mesma promise entre todos os
+// componentes que chamam o hook, evitando varias requisicoes repetidas.
 function fetchGoogleClientId(): Promise<string> {
   if (!clientIdPromise) {
     clientIdPromise = api
@@ -24,6 +26,7 @@ function fetchGoogleClientId(): Promise<string> {
 export function useGoogleClientId(): string | null {
   const [clientId, setClientId] = useState<string | null>(null)
 
+  // Dispara a busca do client id ao montar e guarda o resultado no estado.
   useEffect(() => {
     let cancelled = false
     fetchGoogleClientId().then((value) => {

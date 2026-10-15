@@ -3,8 +3,13 @@ import type { ReactNode } from 'react'
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import type { RegistrationForm } from '../types/auth'
 
+// Unico escopo de autenticacao hoje (cliente da loja). Existe como union pra
+// deixar explicito que o token nao serve pra outra coisa (ex.: admin usa a
+// mesma sessao, so que com a claim "role" diferente - ver decodeTokenRole).
 type AuthScope = 'customer'
 
+// Estado persistido no localStorage: token JWT (ou null quando deslogado) e
+// o escopo associado a ele.
 type AuthState = {
   token: string | null
   scope: AuthScope | null
@@ -29,6 +34,8 @@ export type AuthModalRequest = {
   resetToken?: string
 }
 
+// Formato publico do contexto: o estado de auth mais as acoes que qualquer
+// componente pode chamar para logar, deslogar ou abrir a janela flutuante.
 type AuthContextValue = AuthState & {
   isCustomer: boolean
   /** true quando a claim "role" do token e "admin" (destrava o Admin/ex-Organizador). */
@@ -50,6 +57,8 @@ type AuthContextValue = AuthState & {
 }
 
 const STORAGE_KEY = 'store-auth'
+// Contexto em si comeca nulo - so ganha valor dentro de AuthProvider; usar
+// useAuth() fora dele deve estourar erro (ver abaixo) em vez de falhar calado.
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 /**
@@ -73,6 +82,9 @@ export function decodeTokenRole(token: string | null | undefined): string | null
   }
 }
 
+// Le o estado de auth salvo no localStorage na inicializacao do provider.
+// Qualquer coisa que der errado (chave ausente, JSON invalido) cai de volta
+// no estado deslogado em vez de propagar o erro.
 function readStoredAuth(): AuthState {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -85,19 +97,28 @@ function readStoredAuth(): AuthState {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(readStoredAuth)
   const [modal, setModal] = useState<AuthModalRequest | null>(null)
+  // Acao que ficou "pendente" enquanto o cliente nao logava (ex.: finalizar o
+  // checkout). Fica fora do estado porque e so uma funcao de callback, nao
+  // algo que precisa re-renderizar nada.
   const pendingAction = useRef<(() => void) | null>(null)
 
+  // Efetiva o login: grava token+escopo no localStorage e atualiza o estado
+  // em memoria, mantendo os dois sempre em sincronia.
   const login = useCallback((token: string, scope: AuthScope) => {
     const next = { token, scope }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
     setState(next)
   }, [])
 
+  // Desfaz o login: limpa o localStorage e zera o estado.
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY)
     setState({ token: null, scope: null })
   }, [])
 
+  // Abre a janela flutuante de login/cadastro/reset. Guarda o callback de
+  // sucesso a parte e incrementa o "id" do modal para forcar a janela a
+  // remontar do zero (limpa campos de uma abertura anterior).
   const openAuth = useCallback((request?: Partial<AuthModalRequest> & { onSuccess?: () => void }) => {
     pendingAction.current = request?.onSuccess ?? null
     setModal((current) => ({
@@ -110,11 +131,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
+  // Fecha a janela sem completar nenhuma acao pendente (ex.: cliente desistiu).
   const closeAuth = useCallback(() => {
     pendingAction.current = null
     setModal(null)
   }, [])
 
+  // Chamado pela janela quando login/cadastro termina: loga de verdade,
+  // fecha o modal e, se havia uma acao pendente, executa ela aqui e avisa o
+  // chamador (via retorno true) que ja foi tratada.
   const completeAuth = useCallback(
     (token: string) => {
       login(token, 'customer')
@@ -130,9 +155,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [login],
   )
 
+  // Deriva "esta logado" e "e admin" direto do estado a cada render, em vez
+  // de guardar como estado separado - evita os dois ficarem fora de sincronia.
   const isCustomer = Boolean(state.token) && state.scope === 'customer'
   const isAdmin = isCustomer && decodeTokenRole(state.token) === 'admin'
 
+  // Porta de entrada usada pelas telas que exigem login (ex.: checkout): se
+  // ja estiver logado executa na hora, senao abre a janela e guarda a acao
+  // para rodar depois que o login completar.
   const requireAuth = useCallback(
     (onSuccess: () => void, reason?: string) => {
       if (isCustomer) {
@@ -144,6 +174,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [isCustomer, openAuth],
   )
 
+  // Agrupa tudo que o contexto expoe; memoizado para nao recriar o objeto
+  // (e forcar re-render de todo consumidor) a cada render do provider.
   const value = useMemo(
     () => ({
       ...state,
@@ -163,6 +195,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
+// Hook de acesso ao contexto de auth. Estoura erro cedo se for usado fora de
+// AuthProvider, em vez de deixar os componentes lidarem com `null`.
 export function useAuth() {
   const context = useContext(AuthContext)
   if (!context) {

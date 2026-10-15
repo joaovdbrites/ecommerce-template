@@ -9,6 +9,8 @@ import { getItemStatusPresentation } from '../../utils/itemStatus'
 import { itemCardToProduct } from '../../utils/productModel'
 import { itemIcons } from './icons'
 
+// Dados de um produto necessarios para desenhar o card (subconjunto do produto
+// completo), usado tanto nas listagens do catalogo quanto nos carrosseis.
 export type ItemCardContent = {
   id: string
   name: string
@@ -26,9 +28,13 @@ export type ItemCardContent = {
   status?: OrganizerStatus
 }
 
+// Card de produto clicavel usado nas grades e carrosseis: imagem, favoritar,
+// nome, preco parcelado e botao de adicionar na sacola. Clicar no card leva
+// para a pagina de detalhe do produto.
 export function ItemCard({ className = '', item }: { className?: string; item: ItemCardContent }) {
   const { addItem } = useCart()
   const { token } = useAuth()
+  // Estado local do coracao de favoritos (ainda nao persistido/sincronizado).
   const [favorited, setFavorited] = useState(false)
   const productName = item.name
   const productPrice = item.price || 0
@@ -36,7 +42,9 @@ export function ItemCard({ className = '', item }: { className?: string; item: I
     ? productPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
     : 'Preço não informado'
   const installmentPrice = productPrice / 12
+  // Ajustes visuais/de texto conforme o status do item (ex: esgotado, em breve).
   const statusPresentation = getItemStatusPresentation(item.status)
+  // So mostra "Ultimas X unidades" quando o status permite e ha estoque > 0.
   const showStockCount = statusPresentation.showStockCount && typeof item.stock === 'number' && item.stock > 0
 
   return (
@@ -57,6 +65,8 @@ export function ItemCard({ className = '', item }: { className?: string; item: I
         ) : (
           <Package size={40} />
         )}
+        {/* preventDefault/stopPropagation para o clique no coracao nao navegar
+            para a pagina de detalhe (o card inteiro e um link). */}
         <button
           type="button"
           onClick={(event) => {
@@ -107,6 +117,8 @@ export function ItemCard({ className = '', item }: { className?: string; item: I
             ) : null}
           </div>
           <div className="group relative">
+            {/* Desativado quando o status do item troca o preco por um texto
+                (ex: "Esgotado"), ja que nesse caso nao da para comprar. */}
             <button
               type="button"
               disabled={Boolean(statusPresentation.priceOverrideText)}

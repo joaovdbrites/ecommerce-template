@@ -18,17 +18,21 @@ import (
 // fica pronta e com a senha mais recente - inclusive se alguem perder o
 // acesso por engano, como ja aconteceu em desenvolvimento.
 func SeedAdmin(db *pgxpool.Pool, email, password string) error {
+	// Sem as duas variaveis definidas, o seed fica inativo de proposito.
 	if email == "" || password == "" {
 		return nil
 	}
 
 	ctx := context.Background()
 
+	// Nunca grava senha em texto puro, nem para a conta fixa de admin.
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
 
+	// Cria a conta de administrador se ela ainda nao existir, ou atualiza a
+	// senha e as flags de admin se ja existir (ex: apos trocar ADMIN_PASSWORD).
 	if _, err := db.Exec(ctx, `
 		INSERT INTO customers (name, email, phone, cpf, password_hash, is_admin, is_fixed_admin)
 		VALUES ('Administrador', $1, '', NULL, $2, true, true)

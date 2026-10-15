@@ -14,11 +14,17 @@ type OrdersProfile = {
   orders: CustomerOrder[]
 }
 
+// Pagina "Meus pedidos": lista todos os pedidos do cliente logado, cada um
+// linkando pro detalhe/acompanhamento (/pedidos/:id).
 export function OrdersPage() {
   const { token, scope } = useAuth()
   const format = useCurrency()
+  // null = ainda carregando, [] = carregou e nao tem pedidos
   const [orders, setOrders] = useState<CustomerOrder[] | null>(null)
 
+  // Busca o perfil do cliente (que inclui os pedidos) assim que houver um
+  // token de cliente valido; ignora o resultado se o efeito for desmontado
+  // antes da resposta chegar (evita setState em componente desmontado).
   useEffect(() => {
     if (!token || scope !== 'customer') return
 
@@ -37,8 +43,10 @@ export function OrdersPage() {
     }
   }, [token, scope])
 
+  // Sem sessao de cliente valida, trata como lista vazia (nao mostra skeleton pra sempre)
   const visibleOrders = token && scope === 'customer' ? orders : []
 
+  // Ainda buscando os pedidos: mostra placeholder de carregamento
   if (!visibleOrders) {
     return <Skeleton className="h-[380px] w-full rounded-[36px]" />
   }
@@ -62,6 +70,7 @@ export function OrdersPage() {
         </section>
       </Reveal>
 
+      {/* Cliente sem nenhum pedido ainda ve um estado vazio em vez da lista */}
       {visibleOrders.length === 0 ? (
         <EmptyState
           eyebrow="Pedidos"

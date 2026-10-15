@@ -2,6 +2,8 @@ import { AlertTriangle } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Button } from './Button'
 
+// Dialogo modal generico de confirmacao (ex: "excluir este item?"), com um
+// botao de cancelar e outro de confirmar. So renderiza quando `open` e true.
 export function ConfirmDialog({
   open,
   title,

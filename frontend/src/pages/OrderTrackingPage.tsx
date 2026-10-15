@@ -21,6 +21,9 @@ type OrderPublic = {
   statuses: Array<{ label: string; done: boolean }>
 }
 
+// Pagina publica de acompanhamento de pedido (rota /pedido/:id), acessivel
+// sem login — usada por exemplo em links enviados por email/whatsapp pro
+// cliente acompanhar o status sem precisar entrar na conta.
 export function OrderTrackingPage() {
   const { id } = useParams<{ id: string }>()
   const format = useCurrency()
@@ -28,6 +31,7 @@ export function OrderTrackingPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  // Busca o pedido pelo endpoint publico (sem token) assim que tiver um id na rota
   useEffect(() => {
     if (!id) return
     api
@@ -37,6 +41,7 @@ export function OrderTrackingPage() {
       .finally(() => setLoading(false))
   }, [id])
 
+  // Ainda buscando o pedido: mostra skeletons no lugar do conteudo real
   if (loading) {
     return (
       <div className="mx-auto max-w-2xl space-y-6 px-4 py-12">
@@ -48,6 +53,7 @@ export function OrderTrackingPage() {
     )
   }
 
+  // Erro na busca ou pedido inexistente: mostra estado de "nao encontrado"
   if (error || !order) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-24 text-center">
@@ -63,6 +69,8 @@ export function OrderTrackingPage() {
     )
   }
 
+  // Deriva o estado de cada etapa visivel do acompanhamento a partir do
+  // status bruto do pedido vindo da API
   const steps = [
     { label: 'Confirmado', icon: ShoppingBag, done: true },
     { label: 'Pago', icon: Check, done: order.orderStatus !== 'aguardando_pagamento' },
@@ -104,6 +112,7 @@ export function OrderTrackingPage() {
                   <step.icon size={20} />
                 </div>
                 <span className="text-center text-xs font-semibold text-[#6b665f]">{step.label}</span>
+                {/* Conector entre os icones; nao mostra depois do ultimo passo */}
                 {index < steps.length - 1 ? (
                   <div
                     className={[
@@ -132,6 +141,7 @@ export function OrderTrackingPage() {
                 <p className="font-semibold text-[#2a0f3d]">{format(item.price * item.quantity)}</p>
               </div>
             ))}
+            {/* Linha de desconto so aparece quando o pedido teve desconto aplicado */}
             {order.discount > 0 ? (
               <div className="flex justify-between text-sm text-[#0f8a5f]">
                 <span>Desconto</span>

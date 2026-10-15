@@ -48,6 +48,8 @@ const emptyAddressForm: AddressForm = {
   isDefault: false,
 }
 
+// Pagina "Minha conta" (rota /conta): area logada do cliente com abas de
+// perfil, enderecos e pedidos. Pede login quando acessada sem sessao de cliente.
 export function AccountPage() {
   const { token, scope, logout, openAuth } = useAuth()
   const format = useCurrency()
@@ -64,6 +66,8 @@ export function AccountPage() {
   const [addressForm, setAddressForm] = useState<AddressForm>(emptyAddressForm)
   const [addressSaving, setAddressSaving] = useState(false)
 
+  // Carrega o perfil completo (dados pessoais, enderecos, pedidos) assim que
+  // houver sessao de cliente valida
   useEffect(() => {
     if (token && scope === 'customer') {
       api
@@ -73,6 +77,8 @@ export function AccountPage() {
     }
   }, [token, scope])
 
+  // Visitante sem sessao de cliente ve uma tela convidando a entrar/cadastrar,
+  // em vez da pagina de conta propriamente dita
   if (!token || scope !== 'customer') {
     return (
       <section className="surface-panel p-6 sm:p-8">
@@ -97,10 +103,12 @@ export function AccountPage() {
     )
   }
 
+  // Perfil ainda nao chegou da API: mostra placeholder de carregamento
   if (!profile) {
     return <Skeleton className="h-[420px] w-full rounded-[36px]" />
   }
 
+  // Salva as alteracoes do formulario de dados pessoais (aba Perfil)
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!token) return
@@ -127,6 +135,8 @@ export function AccountPage() {
     }
   }
 
+  // Cria ou atualiza um endereco (o backend decide com base no addressId
+  // presente no addressForm) e repopula o profile com a resposta atualizada
   async function handleAddressSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!token) return
@@ -145,6 +155,7 @@ export function AccountPage() {
     }
   }
 
+  // Marca um endereco existente como o padrao de entrega
   async function makeDefaultAddress(addressId: string) {
     if (!token) return
     setMessage('')
@@ -158,6 +169,7 @@ export function AccountPage() {
     }
   }
 
+  // Definicao das 3 abas da pagina de conta (rotuladas pelo activeTab abaixo)
   const tabs: Array<{ id: AccountTab; label: string; icon: ReactNode }> = [
     { id: 'profile', label: 'Perfil', icon: <UserRound size={16} /> },
     { id: 'addresses', label: 'Enderecos', icon: <MapPin size={16} /> },
@@ -201,6 +213,7 @@ export function AccountPage() {
         </div>
       </div>
 
+      {/* Aba Perfil: formulario de dados pessoais */}
       {activeTab === 'profile' ? (
         <section className="surface-panel p-6">
           <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSave}>
@@ -217,9 +230,12 @@ export function AccountPage() {
         </section>
       ) : null}
 
+      {/* Aba Enderecos: lista de enderecos salvos + formulario de
+          adicionar/editar endereco lado a lado */}
       {activeTab === 'addresses' ? (
         <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
           <div className="space-y-4">
+            {/* Sem enderecos salvos ainda, mostra estado vazio no lugar da lista */}
             {profile.addresses.length === 0 ? (
               <EmptyState
                 eyebrow="Enderecos"
@@ -243,7 +259,9 @@ export function AccountPage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      {/* Badge "Padrao" so no endereco que ja é o padrao */}
                       {address.isDefault ? <Badge tone="success">Padrao</Badge> : null}
+                      {/* Botao de tornar padrao so aparece pros outros enderecos */}
                       {!address.isDefault && address.id ? (
                         <Button variant="secondary" size="sm" onClick={() => makeDefaultAddress(address.id!)}>
                           Tornar padrao
@@ -275,6 +293,9 @@ export function AccountPage() {
             )}
           </div>
 
+          {/* Formulario reaproveitado tanto pra adicionar um endereco novo
+              quanto pra editar um existente — o titulo e os valores iniciais
+              mudam conforme addressForm.addressId estiver preenchido ou nao */}
           <div className="surface-panel p-6">
             <h2 className="text-4xl leading-none text-[#2a0f3d]">
               {addressForm.addressId ? 'Editar endereco' : 'Adicionar outro endereco'}
@@ -366,8 +387,11 @@ export function AccountPage() {
         </section>
       ) : null}
 
+      {/* Aba Pedidos: historico resumido dos pedidos do cliente, cada um
+          linkando pro detalhe completo */}
       {activeTab === 'orders' ? (
         <section className="space-y-4">
+          {/* Sem pedidos ainda, mostra estado vazio no lugar da lista */}
           {profile.orders.length === 0 ? (
             <EmptyState
               eyebrow="Pedidos"
@@ -401,6 +425,7 @@ export function AccountPage() {
         </section>
       ) : null}
 
+      {/* Feedback de sucesso/erro das acoes de salvar perfil/endereco */}
       {message ? (
         <p className="rounded-[24px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
           {message}

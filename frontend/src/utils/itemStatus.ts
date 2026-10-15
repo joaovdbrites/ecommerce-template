@@ -11,6 +11,9 @@ export type ItemStatusPresentation = {
   availableLabel: string
 }
 
+// Traduz o status de um item do Organizador em instrucoes de apresentacao
+// visual (escala de cinza, texto no lugar do preco, badge de disponibilidade) -
+// centraliza essa regra pra todo lugar que exibe um item (card, pagina de produto) usar a mesma logica.
 export function getItemStatusPresentation(status: OrganizerStatus | undefined): ItemStatusPresentation {
   switch (status) {
     case 'coming-soon':

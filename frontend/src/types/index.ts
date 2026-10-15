@@ -1,5 +1,8 @@
 import type { OrganizerStatus } from './organizer'
 
+// Representa um produto pronto para exibicao/venda, seja ele vindo do
+// catalogo real (gestao de estoque tradicional) ou de um item do Organizador
+// (ver utils/productModel.ts para a conversao entre os dois formatos).
 export type Product = {
   id: string
   sku: string
@@ -36,15 +39,18 @@ export type Product = {
   status?: OrganizerStatus
 }
 
+// Um produto dentro do carrinho, com a quantidade escolhida pelo cliente.
 export type CartItem = Product & {
   quantity: number
 }
 
+// Par generico id/nome usado para popular selects (ex.: filtros de marca/categoria).
 export type SelectOption = {
   id: string
   name: string
 }
 
+// Endereco de entrega salvo no cadastro do cliente.
 export type CustomerAddress = {
   id?: string
   label?: string
@@ -57,6 +63,7 @@ export type CustomerAddress = {
   isDefault?: boolean
 }
 
+// Pedido resumido para a listagem "Meus pedidos" do cliente.
 export type CustomerOrder = {
   id: string
   total: number
@@ -68,6 +75,7 @@ export type CustomerOrder = {
   itemCount?: number
 }
 
+// Um item de linha dentro do detalhe de um pedido.
 export type CustomerOrderItem = {
   name: string
   price: number
@@ -75,6 +83,8 @@ export type CustomerOrderItem = {
   imageUrl: string
 }
 
+// Detalhe completo de um pedido (tela de acompanhamento do cliente), com
+// itens, endereco de entrega e o resumo de valores.
 export type CustomerOrderDetail = {
   id: string
   total: number

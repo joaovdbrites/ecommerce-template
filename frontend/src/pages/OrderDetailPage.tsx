@@ -19,14 +19,20 @@ import { api } from '../services/api'
 import type { CustomerOrderDetail } from '../types'
 import { formatOrderDate, getPaymentPresentation, isOrderCancelled } from '../utils/orders'
 
+// Pagina de detalhe de um pedido especifico (rota /pedidos/:id), so acessivel
+// pro cliente logado dono do pedido: itens, acompanhamento, resumo de valores
+// e endereco de entrega.
 export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { token, scope } = useAuth()
   const format = useCurrency()
   const [order, setOrder] = useState<CustomerOrderDetail | null>(null)
   const [error, setError] = useState('')
+  // So tenta carregar o pedido se tiver sessao de cliente valida e um id na rota
   const canLoadOrder = Boolean(token && scope === 'customer' && id)
 
+  // Busca o detalhe do pedido na API; ignora o resultado se o efeito for
+  // desmontado antes da resposta chegar (evita setState em componente desmontado).
   useEffect(() => {
     if (!token || scope !== 'customer' || !id) return
 
@@ -45,10 +51,12 @@ export function OrderDetailPage() {
     }
   }, [id, scope, token])
 
+  // Ainda esperando a resposta da API: mostra placeholder de carregamento
   if (canLoadOrder && !order && !error) {
     return <Skeleton className="h-[620px] w-full rounded-[36px]" />
   }
 
+  // Sem permissao, sem id, ou erro/pedido inexistente: mostra estado de erro
   if (!canLoadOrder || !order || error) {
     const message = error || 'Os detalhes deste pedido serão habilitados na próxima implementação.'
     return (
@@ -63,6 +71,8 @@ export function OrderDetailPage() {
     )
   }
 
+  // Deriva o estado de cada etapa do acompanhamento a partir do status do
+  // pedido; quando cancelado, a ultima etapa vira "Pedido cancelado" (danger)
   const cancelled = isOrderCancelled(order)
   const message = getPaymentPresentation(order)
   const paid = order.orderStatus !== 'aguardando_pagamento' && !cancelled
@@ -136,11 +146,14 @@ export function OrderDetailPage() {
                 ))}
               </div>
 
+              {/* Linha do tempo com as 4 etapas do pedido (recebido, pago,
+                  enviado, entregue/cancelado) */}
               <div className="mt-4 border-t border-stone-100 pt-5">
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#6b665f]">Acompanhamento</p>
                 <div className="mt-5 grid grid-cols-4 gap-1">
                   {steps.map((step, index) => (
                     <div key={step.label} className="relative flex min-w-0 flex-col items-center text-center">
+                      {/* Conector entre os icones; nao mostra antes do primeiro passo */}
                       {index > 0 ? (
                         <span
                           className={[
@@ -185,6 +198,7 @@ export function OrderDetailPage() {
                   <span>Frete</span>
                   <span>{format(order.shipping)}</span>
                 </div>
+                {/* Linha de desconto so aparece quando o pedido teve desconto aplicado */}
                 {order.discount > 0 ? (
                   <div className="flex justify-between gap-4 text-emerald-700">
                     <span>Desconto</span>

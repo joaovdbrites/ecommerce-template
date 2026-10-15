@@ -3,11 +3,15 @@ import { useDragScroll } from '../hooks/useDragScroll'
 
 const MAX_VISIBLE_BRANDS = 6
 
+// Faixa horizontal com as marcas trabalhadas pela loja, com arraste e loop
+// infinito. Usada na home para passar credibilidade.
 export function BrandMarquee({ brands }: { brands: string[] }) {
+  // Limita a quantidade de marcas exibidas e duplica a lista para o efeito de loop.
   const visible = brands.slice(0, MAX_VISIBLE_BRANDS)
   const items = [...visible, ...visible]
   const { ref, dragging, handlers } = useDragScroll<HTMLDivElement>({ loopItemCount: visible.length })
 
+  // Sem marcas cadastradas, a secao inteira nem aparece.
   if (visible.length === 0) return null
 
   return (

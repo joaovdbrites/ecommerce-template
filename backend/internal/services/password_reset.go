@@ -21,6 +21,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// passwordResetTTL e quanto tempo um link de redefinicao de senha vale antes
+// de expirar.
 const passwordResetTTL = time.Hour
 
 // ErrResetUnavailable aparece quando a loja ainda nao configurou o SMTP: sem
@@ -30,11 +32,16 @@ var ErrResetUnavailable = errors.New(
 	"recuperacao de senha por e-mail indisponivel no momento. Fale com o atendimento para liberar o acesso.",
 )
 
+// ErrResetTokenInvalid cobre token inexistente, ja usado ou expirado - nao
+// diferencia os casos para nao dar pista a quem esta tentando adivinhar tokens.
 var ErrResetTokenInvalid = &FieldConflictError{
 	Field:   "token",
 	Message: "este link de recuperacao expirou ou ja foi usado. Peca um novo.",
 }
 
+// hashResetToken transforma o token em texto plano (o que vai no link do
+// e-mail) no hash que fica salvo no banco - assim um vazamento da tabela
+// password_resets nao da para reconstruir o token original.
 func hashResetToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
@@ -51,6 +58,8 @@ func (s *Service) RequestPasswordReset(ctx context.Context, identifier string) e
 		return ErrResetUnavailable
 	}
 
+	// O identificador pode ser e-mail ou CPF; decide qual coluna comparar
+	// pela presenca de "@".
 	emailKey, cpfKey := "", ""
 	if strings.Contains(identifier, "@") {
 		emailKey = normalizeEmail(identifier)
@@ -58,6 +67,8 @@ func (s *Service) RequestPasswordReset(ctx context.Context, identifier string) e
 		cpfKey = digitsOnly(identifier)
 	}
 
+	// Busca a conta por e-mail ou CPF normalizado. Se nao achar, sai
+	// silenciosamente (ver comentario da funcao sobre nao vazar cadastro).
 	var customerID, name, email string
 	err := s.db.QueryRow(ctx, `
 		SELECT id::text, name, email
@@ -79,6 +90,8 @@ func (s *Service) RequestPasswordReset(ctx context.Context, identifier string) e
 		return err
 	}
 
+	// Gera um token aleatorio de 32 bytes (nao previsivel) e grava so o hash
+	// dele no banco, com validade de passwordResetTTL.
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return err
@@ -94,6 +107,8 @@ func (s *Service) RequestPasswordReset(ctx context.Context, identifier string) e
 	link := fmt.Sprintf("%s/redefinir-senha?token=%s",
 		strings.TrimRight(s.cfg.FrontendURL, "/"), url.QueryEscape(token))
 
+	// Modo debug (sem SMTP configurado, so em ambiente de desenvolvimento):
+	// imprime o link no log em vez de mandar e-mail de verdade.
 	if !s.mailer.Configured() {
 		log.Printf("[reset] SMTP nao configurado - link de %s: %s", email, link)
 		return nil
@@ -107,6 +122,9 @@ func (s *Service) RequestPasswordReset(ctx context.Context, identifier string) e
 	return nil
 }
 
+// buildResetEmail monta o e-mail de redefinicao de senha em texto puro e em
+// HTML (com o link escapado contra injecao), seguindo a identidade visual da
+// loja.
 func buildResetEmail(to, greeting, link string) mailer.Message {
 	if greeting == "" {
 		greeting = "Ola"
@@ -178,6 +196,9 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 	}
 	defer tx.Rollback(ctx)
 
+	// So aceita token que exista, nao tenha sido usado ainda e nao tenha
+	// expirado. FOR UPDATE evita corrida com outra requisicao tentando
+	// consumir o mesmo token ao mesmo tempo.
 	var resetID, customerID string
 	err = tx.QueryRow(ctx, `
 		SELECT id::text, customer_id::text
@@ -191,11 +212,14 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return nil, err
 	}
 
+	// Precisa saber se e admin para gerar o token de sessao com a role certa.
 	var isAdmin bool
 	if err := tx.QueryRow(ctx, `SELECT is_admin FROM customers WHERE id = $1`, customerID).Scan(&isAdmin); err != nil {
 		return nil, err
 	}
 
+	// Grava a nova senha com hash e marca o token como usado (uso unico) na
+	// mesma transacao.
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, err

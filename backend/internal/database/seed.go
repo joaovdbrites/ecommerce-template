@@ -6,9 +6,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Seed garante que os dados base da loja (regras de frete e um cupom de boas
+// vindas) existam no banco. Usa ON CONFLICT DO UPDATE para ser idempotente:
+// pode rodar em todo boot sem duplicar registros.
 func Seed(db *pgxpool.Pool) error {
 	ctx := context.Background()
 
+	// Cada string e um INSERT ... ON CONFLICT DO UPDATE: a primeira cria as
+	// regras de frete padrao (fixo, gratis acima de valor, por peso, retirada
+	// e manual); a segunda cria o cupom de desconto de boas-vindas.
 	queries := []string{
 		`INSERT INTO shipping_rules (name, code, rule_type, amount, min_order_amount, weight_min_grams, weight_max_grams, region_prefix, description, is_active)
 		 VALUES
@@ -33,6 +39,7 @@ func Seed(db *pgxpool.Pool) error {
 		 ON CONFLICT (code) DO UPDATE SET value = EXCLUDED.value, is_active = EXCLUDED.is_active;`,
 	}
 
+	// Executa cada query, parando no primeiro erro.
 	for _, query := range queries {
 		if _, err := db.Exec(ctx, query); err != nil {
 			return err

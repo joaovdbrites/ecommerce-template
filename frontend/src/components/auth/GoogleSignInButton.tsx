@@ -34,8 +34,12 @@ declare global {
 
 const SCRIPT_SRC = 'https://accounts.google.com/gsi/client'
 const SCRIPT_TIMEOUT_MS = 8000
+// Cache do carregamento do script do Google entre instancias do componente,
+// para nao injetar a tag <script> mais de uma vez na pagina.
 let scriptPromise: Promise<void> | null = null
 
+// Injeta (ou reaproveita) a tag <script> do Google Identity Services e resolve
+// quando ela termina de carregar.
 function loadGoogleScript(): Promise<void> {
   if (window.google?.accounts?.id) return Promise.resolve()
   if (scriptPromise) return scriptPromise
@@ -82,7 +86,10 @@ export function GoogleSignInButton({
   disabled?: boolean
 }) {
   const container = useRef<HTMLDivElement>(null)
+  // Guarda a callback mais recente para o listener do Google (registrado uma
+  // unica vez) sempre chamar a versao atual, sem precisar reinicializar.
   const callbackRef = useRef(onCredential)
+  // Indica se o script do Google falhou ao carregar, mostrando o botao desativado.
   const [failed, setFailed] = useState(false)
   const clientId = useGoogleClientId()
   // O botao oficial do Google so aceita largura em pixels, entao medimos o
@@ -114,6 +121,8 @@ export function GoogleSignInButton({
     callbackRef.current = onCredential
   }, [onCredential])
 
+  // Carrega o script, inicializa o Google Identity Services e renderiza o
+  // botao oficial dentro do container assim que a largura ja for conhecida.
   useEffect(() => {
     if (!clientId || width === 0) return
     let cancelled = false
@@ -174,6 +183,8 @@ export function GoogleSignInButton({
   )
 }
 
+// Logo "G" do Google desenhado em SVG, usado no botao de fallback quando o
+// script oficial nao carrega; `muted` deixa o desenho acinzentado/desativado.
 function GoogleGlyph({ muted = false }: { muted?: boolean }) {
   if (muted) {
     return (

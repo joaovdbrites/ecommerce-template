@@ -4,9 +4,14 @@ type HighlightModuleProps = {
   module: OrganizerNode
 }
 
+// Renderiza um modulo de destaque no site publico: um banner com imagem de
+// fundo, titulo e descricao sobrepostos, no tamanho escolhido no Organizador.
 export function HighlightModule({ module }: HighlightModuleProps) {
+  // Destaque sem imagem nao tem o que mostrar.
   if (!module.imageUrl) return null
 
+  // Proporcao do banner (altura relativa a largura) de acordo com o tamanho
+  // escolhido, com breakpoints proprios para telas maiores.
   const sizeClassName = {
     small: 'aspect-[16/7] sm:aspect-[16/5] lg:aspect-[16/4]',
     medium: 'aspect-[4/3] sm:aspect-[16/7] lg:aspect-[16/5]',

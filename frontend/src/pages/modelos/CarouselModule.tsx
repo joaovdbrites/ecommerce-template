@@ -8,7 +8,12 @@ type CarouselModuleProps = {
   items: ItemCardContent[]
 }
 
+// Renderiza um modulo de carrossel no site publico: ou uma faixa de
+// banners (variant "banner-carousel") ou uma faixa comum de ItemCards.
 export function CarouselModule({ module, items }: CarouselModuleProps) {
+  // Variante de carrossel de banners: usa os itens selecionados como
+  // banners individuais, ou cai na imagem de capa do proprio modulo quando
+  // nao ha itens escolhidos.
   if (module.variant === 'banner-carousel') {
     const banners: Array<ItemCardContent | null> = items.length > 0 ? items : module.imageUrl ? [null] : []
 
@@ -45,6 +50,7 @@ export function CarouselModule({ module, items }: CarouselModuleProps) {
     )
   }
 
+  // Carrossel comum: sem itens selecionados, nao ha o que mostrar.
   if (items.length === 0) return null
 
   return (

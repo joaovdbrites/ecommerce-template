@@ -8,11 +8,14 @@ import sacolaIcon from '../../../assets/icons/sacola_d_c.png'
 import { useAuth } from '../../../contexts/AuthContext'
 import { useCart } from '../../../contexts/CartContext'
 
+// Barra de navegacao fixa no rodape, exclusiva do layout mobile: home,
+// pedidos, carrinho e o menu da conta (ou atalho pra login/cadastro).
 export function MobileBottomNav() {
   const { scope, requireAuth, isAdmin, logout } = useAuth()
   const { items } = useCart()
   const navigate = useNavigate()
   const isCustomer = scope === 'customer'
+  // Total de itens no carrinho, mostrado como badge no icone da sacola
   const count = items.reduce((sum, item) => sum + item.quantity, 0)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
 
@@ -40,6 +43,8 @@ export function MobileBottomNav() {
         </span>
         Sacola
       </NavLink>
+      {/* Cliente logado ve o botao "Minha conta" com dropdown; visitante ve
+          um botao que pede login antes de ir pra conta */}
       {isCustomer ? (
         <div className="relative flex flex-1">
           <button
@@ -78,6 +83,7 @@ export function MobileBottomNav() {
                 navigate('/conta?tab=addresses')
               }}
             />
+            {/* Atalho pro painel do Organizador, só pra quem é admin */}
             {isAdmin ? (
               <AccountMenuItem
                 icon={<LayoutDashboard size={16} />}
@@ -113,6 +119,7 @@ export function MobileBottomNav() {
         </button>
       )}
 
+      {/* Overlay invisivel pra fechar o menu ao clicar fora dele */}
       {accountMenuOpen ? (
         <div aria-hidden="true" onClick={() => setAccountMenuOpen(false)} className="fixed inset-0 z-30" />
       ) : null}
@@ -120,6 +127,7 @@ export function MobileBottomNav() {
   )
 }
 
+// Item de linha reutilizado dentro do dropdown "Minha conta" (icone + label)
 function AccountMenuItem({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
   return (
     <button

@@ -1,3 +1,5 @@
+// Base das chamadas de API: configuravel por env (deploys separados de
+// frontend/backend) e cai em '/api' (mesmo dominio, via proxy) por padrao.
 const API_URL = import.meta.env.VITE_API_URL ?? '/api'
 
 // O backend responde 409 com { message, field } quando algum dado da ficha de
@@ -15,6 +17,10 @@ export class ApiError extends Error {
   }
 }
 
+// Wrapper central do fetch: monta a URL completa, sempre manda JSON por
+// padrao, e padroniza o formato de resposta (envelope `{ data }`) e de erro
+// (lanca ApiError com status e, se houver, o campo problematico) para quem
+// chama nao precisar repetir esse tratamento em cada lugar.
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     headers: {
@@ -32,6 +38,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload.data as T
 }
 
+// Metodos HTTP prontos para o resto do app consumir, todos passando pelo
+// `request` acima (exceto upload, que precisa de multipart/form-data em vez
+// de JSON e por isso monta a requisicao por conta propria).
 export const api = {
   get: <T>(path: string, token?: string) =>
     request<T>(path, {
@@ -54,6 +63,8 @@ export const api = {
       method: 'DELETE',
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     }),
+  // Envia um arquivo via multipart/form-data (ex.: foto de produto) e
+  // devolve a URL publica onde ele ficou salvo.
   upload: async (path: string, file: File, token?: string): Promise<string> => {
     const formData = new FormData()
     formData.append('file', file)

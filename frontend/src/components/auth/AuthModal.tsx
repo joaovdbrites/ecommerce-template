@@ -23,6 +23,10 @@ type FieldErrors = Partial<Record<RegistrationField | 'identifier' | 'token', st
 
 const digitsOnly = (value: string) => value.replace(/\D/g, '')
 
+// Modal unico que cobre todo o fluxo de autenticacao do cliente: identificar
+// por e-mail/CPF, login por senha, cadastro, recuperacao e redefinicao de
+// senha, alem do login social via Google. Qual etapa abre primeiro depende do
+// `modal` vindo do AuthContext (ex: abrir direto no cadastro ou na redefinicao).
 export function AuthModal() {
   const { modal, closeAuth, completeAuth, login, token } = useAuth()
   const navigate = useNavigate()
@@ -40,19 +44,23 @@ export function AuthModal() {
     [completeAuth, navigate],
   )
 
+  // Etapa atual do fluxo: decide qual sub-formulario e exibido no corpo do modal.
   const [step, setStep] = useState<ModalStep>(() => {
     if (modal?.view === 'register') return 'register'
     if (modal?.view === 'reset') return 'reset'
     return 'identify'
   })
   const [identifier, setIdentifier] = useState('')
+  // Resultado de /auth/customer/identify: se a conta existe, tem senha e/ou Google.
   const [identity, setIdentity] = useState<AuthIdentity | null>(null)
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  // Dados da ficha de cadastro; comeca com o prefill vindo do contexto (ex: e-mail ja digitado).
   const [form, setForm] = useState<RegistrationForm>(() => ({
     ...EMPTY_REGISTRATION_FORM,
     ...modal?.prefill,
   }))
+  // Verdadeiro quando o cadastro e so para completar dados que o Google nao fornece.
   const [completingProfile, setCompletingProfile] = useState(Boolean(modal?.completingProfile))
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [error, setError] = useState('')
@@ -64,11 +72,13 @@ export function AuthModal() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
 
+  // Trava o scroll do fundo enquanto o modal estiver aberto (mesma classe usada pelos drawers).
   useEffect(() => {
     document.body.classList.add('drawer-open')
     return () => document.body.classList.remove('drawer-open')
   }, [])
 
+  // Tecla Esc fecha o modal, igual a clicar no overlay ou no X.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') closeAuth()
@@ -77,11 +87,14 @@ export function AuthModal() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [closeAuth])
 
+  // Atualiza um campo da ficha de cadastro e limpa o erro que esse campo tinha.
   const setField = useCallback((field: RegistrationField, value: string) => {
     setForm((current) => ({ ...current, [field]: value }))
     setFieldErrors((current) => ({ ...current, [field]: undefined }))
   }, [])
 
+  // Leva para a etapa de cadastro, aplicando um prefill (ex: e-mail/CPF digitado
+  // na identificacao, ou dados vindos do Google).
   const goToRegister = useCallback((prefill: Partial<RegistrationForm>, isCompletingProfile = false) => {
     setForm((current) => ({ ...current, ...prefill }))
     setCompletingProfile(isCompletingProfile)
@@ -90,6 +103,8 @@ export function AuthModal() {
     setStep('register')
   }, [])
 
+  // Leva para a etapa de recuperacao de senha, reaproveitando o e-mail mascarado
+  // ja conhecido (se a identificacao ja tiver rodado).
   const goToRecover = useCallback(() => {
     setStep('recover')
     setPassword('')
@@ -100,6 +115,8 @@ export function AuthModal() {
     setRecoverTarget(identity?.maskedEmail ?? '')
   }, [identity])
 
+  // Decide o que pre-preencher na ficha de cadastro a partir do texto digitado
+  // na identificacao: e-mail quando tem "@", senao trata como CPF.
   function prefillFromIdentifier(value: string): Partial<RegistrationForm> {
     const trimmed = value.trim()
     if (!trimmed) return {}
@@ -109,6 +126,8 @@ export function AuthModal() {
     return { cpf: formatCPF(trimmed) }
   }
 
+  // Primeiro passo do login: descobre se ja existe conta para o e-mail/CPF
+  // informado e decide a proxima etapa (senha, Google, ou ir direto pro cadastro).
   async function handleIdentify(event: FormEvent) {
     event.preventDefault()
     const value = identifier.trim()
@@ -145,6 +164,7 @@ export function AuthModal() {
     }
   }
 
+  // Login com e-mail/CPF + senha, apos a etapa de identificacao confirmar que a conta existe.
   async function handlePasswordLogin(event: FormEvent) {
     event.preventDefault()
     setError('')
@@ -205,6 +225,7 @@ export function AuthModal() {
     }
   }
 
+  // Define a senha nova a partir do token do link de recuperacao e ja autentica o cliente.
   async function handleReset(event: FormEvent) {
     event.preventDefault()
     setError('')
@@ -233,6 +254,8 @@ export function AuthModal() {
     }
   }
 
+  // Troca a credencial do Google Identity Services por um token da loja; se a
+  // conta ainda precisa de dados adicionais, encaminha para o cadastro.
   async function handleGoogleCredential(credential: string) {
     setError('')
     setNotice('')
@@ -268,6 +291,7 @@ export function AuthModal() {
     }
   }
 
+  // Preenche rua/bairro/cidade/UF automaticamente a partir do CEP digitado na ficha.
   async function lookupCep(rawCep: string) {
     const cep = digitsOnly(rawCep)
     if (cep.length !== 8) return
@@ -309,6 +333,7 @@ export function AuthModal() {
     [token],
   )
 
+  // Ao sair de um campo unico (email/cpf/phone), confere na hora se ja pertence a outra conta.
   async function handleFieldBlur(field: 'email' | 'cpf' | 'phone') {
     const value = form[field]
     if (!value.trim()) return
@@ -318,6 +343,8 @@ export function AuthModal() {
     }
   }
 
+  // Envia a ficha de cadastro; se completando perfil via Google, usa o token
+  // existente para associar os dados a conta ja logada.
   async function handleRegister(event: FormEvent) {
     event.preventDefault()
     setError('')
@@ -358,6 +385,8 @@ export function AuthModal() {
     }
   }
 
+  // Traduz um erro de API em mensagem de campo (quando a API aponta qual campo)
+  // ou em mensagem geral do formulario.
   function applyError(err: unknown) {
     if (err instanceof ApiError && err.field) {
       setFieldErrors((current) => ({ ...current, [err.field as RegistrationField]: err.message }))
@@ -367,6 +396,7 @@ export function AuthModal() {
     setError(err instanceof Error ? err.message : 'Nao foi possivel concluir. Tente novamente.')
   }
 
+  // Titulo do cabecalho do modal, de acordo com a etapa atual.
   const title =
     step === 'register'
       ? 'Ficha de cadastro'
@@ -610,6 +640,8 @@ function InlineField({
   )
 }
 
+// Link de texto sublinhado usado para acoes secundarias dentro do modal
+// (ex: "Cadastrar", "Esqueci minha senha", "Voltar para o login").
 function TextLink({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return (
     <button
@@ -622,6 +654,7 @@ function TextLink({ children, onClick }: { children: ReactNode; onClick: () => v
   )
 }
 
+// Etapa inicial: pede e-mail ou CPF para descobrir se ja existe cadastro.
 function IdentifyStep({
   identifier,
   error,
@@ -658,6 +691,7 @@ function IdentifyStep({
   )
 }
 
+// Etapa de login por senha, exibida quando o e-mail/CPF informado ja tem conta com senha.
 function PasswordStep({
   password,
   error,
@@ -711,6 +745,8 @@ function PasswordStep({
   )
 }
 
+// Etapa de recuperacao de senha: pede o identificador e, apos o envio, mostra
+// a confirmacao de que o link foi (ou pode ter sido) enviado por e-mail.
 function RecoverStep({
   identifier,
   maskedEmail,
@@ -730,6 +766,7 @@ function RecoverStep({
   onSubmit: (event: FormEvent) => void
   onBack: () => void
 }) {
+  // Depois de enviado, troca o formulario por uma mensagem de confirmacao.
   if (sent) {
     return (
       <div className="space-y-4">
@@ -786,6 +823,7 @@ function RecoverStep({
   )
 }
 
+// Etapa de definir senha nova a partir do token recebido por e-mail.
 function ResetStep({
   password,
   confirmPassword,
@@ -809,6 +847,7 @@ function ResetStep({
   onSubmit: (event: FormEvent) => void
   onBack: () => void
 }) {
+  // Forca da senha digitada e se a confirmacao bate, para feedback em tempo real.
   const strength = getPasswordStrength(password)
   const matches = password === confirmPassword
 
@@ -873,6 +912,8 @@ function ResetStep({
   )
 }
 
+// Ficha completa de cadastro (dados pessoais, endereco e senha). Tambem serve
+// para completar o perfil de quem entrou pelo Google, com `completingProfile`.
 function RegisterStep({
   form,
   fieldErrors,
@@ -898,6 +939,7 @@ function RegisterStep({
   onSubmit: (event: FormEvent) => void
   onBackToLogin: () => void
 }) {
+  // Forca da senha digitada e se a confirmacao bate, para feedback em tempo real.
   const strength = useMemo(() => getPasswordStrength(form.password), [form.password])
   const passwordsMatch = form.password === form.confirmPassword
 
@@ -1064,6 +1106,8 @@ function RegisterStep({
   )
 }
 
+// Campo de input compacto usado dentro da ficha de cadastro/redefinicao, com
+// suporte a erro, dica e um elemento final opcional (ex: botao de olho da senha).
 function ModalField({
   label,
   value,

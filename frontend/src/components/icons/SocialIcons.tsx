@@ -1,3 +1,4 @@
+// Icone do WhatsApp desenhado em SVG (sem depender de pacote de icones externo).
 export function WhatsAppIcon({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -16,6 +17,7 @@ export function WhatsAppIcon({ size = 16 }: { size?: number }) {
   )
 }
 
+// Icone do Instagram desenhado em SVG (sem depender de pacote de icones externo).
 export function InstagramIcon({ size = 16 }: { size?: number }) {
   return (
     <svg

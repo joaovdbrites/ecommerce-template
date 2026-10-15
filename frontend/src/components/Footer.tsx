@@ -3,6 +3,9 @@ import { useStoreWhatsapp } from '../hooks/useStoreWhatsapp'
 import { useStoreTheme } from '../hooks/useStoreTheme'
 import { InstagramIcon, WhatsAppIcon } from './icons/SocialIcons'
 
+// Rodape global do site: logo/descricao da loja, aviso de atendimento e os
+// links de redes sociais configurados no admin (WhatsApp, e-mail, Instagram e
+// links extras). Fica em todas as paginas publicas.
 export function Footer() {
   const storeWhatsapp = useStoreWhatsapp()
   const { storeName, logoUrl, footerDescription, contactEmail, instagramUrl, extraLinks } = useStoreTheme()
@@ -35,6 +38,7 @@ export function Footer() {
             Minhas redes sociais
           </p>
           <div className="grid gap-3 text-sm text-[#fafaf8]">
+            {/* Cada link social so aparece se a loja tiver configurado o dado correspondente. */}
             {storeWhatsapp ? (
               <a
                 href={`https://wa.me/${storeWhatsapp}`}

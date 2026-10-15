@@ -1,17 +1,24 @@
 import { useEffect, useState } from 'react'
 import { api } from '../services/api'
 
+// Presets de estilo que o lojista escolhe em Configuracoes > Aparencia -
+// cada um mapeia para um valor concreto de CSS (ver os Record *_PX/*_SCALE abaixo).
 export type ButtonRadiusPreset = 'square' | 'rounded' | 'pill'
 export type WindowRadiusPreset = 'square' | 'rounded' | 'xl'
 export type WindowShadowPreset = 'soft' | 'medium' | 'strong'
 export type DensityPreset = 'compact' | 'comfortable' | 'spacious'
 
+// Link extra configuravel pelo lojista (ex.: redes sociais, paginas externas)
+// exibido no rodape da loja.
 export type StoreLink = {
   id: string
   label: string
   url: string
 }
 
+// Configuracao visual completa da loja: cores, fontes, formatos de
+// botao/janela e textos institucionais do rodape. E o formato "tipado" usado
+// pela UI, convertido a partir das chaves cruas `theme_*` vindas da API (ver parseTheme).
 export type StoreTheme = {
   storeName: string
   logoUrl: string
@@ -35,6 +42,8 @@ export type StoreTheme = {
   extraLinks: StoreLink[]
 }
 
+// Tema aplicado antes da config real da loja chegar da API (e tambem usado
+// como fallback de cada campo individual em parseTheme).
 export const DEFAULT_STORE_THEME: StoreTheme = {
   storeName: 'Minha Loja',
   logoUrl: '',
@@ -59,9 +68,12 @@ export const DEFAULT_STORE_THEME: StoreTheme = {
   extraLinks: [],
 }
 
+// Fontes do Google Fonts oferecidas no seletor de Aparencia (titulos e corpo
+// de texto separados, ja que cada uma tem opcoes com pesos/estilos diferentes).
 export const HEADING_FONT_OPTIONS = ['Cormorant Garamond', 'Playfair Display', 'Merriweather', 'Lora', 'Poppins']
 export const BODY_FONT_OPTIONS = ['Montserrat', 'Inter', 'Manrope', 'Roboto', 'Open Sans']
 
+// Tabelas de conversao preset -> valor CSS concreto, usadas por applyStoreTheme.
 const BUTTON_RADIUS_PX: Record<ButtonRadiusPreset, string> = {
   square: '8px',
   rounded: '20px',
@@ -113,6 +125,9 @@ export function parseTheme(raw: RawThemeSettings | undefined | null): StoreTheme
   }
 }
 
+// Desserializa a lista de links extras (salva como JSON em uma unica chave
+// `theme_extra_links`) e filtra qualquer entrada que nao tenha o formato
+// esperado, pra um dado corrompido nao quebrar o rodape inteiro.
 function parseExtraLinks(raw: string | undefined): StoreLink[] {
   if (!raw) return []
   try {
@@ -127,6 +142,9 @@ function parseExtraLinks(raw: string | undefined): StoreLink[] {
   }
 }
 
+// Escurece uma cor hex em `amount` (0 a 1), usado para gerar a variante
+// "dark" da cor primaria (ex.: hover de botoes) sem o lojista precisar
+// configurar uma segunda cor. Hex invalido devolve a cor original sem mudanca.
 function darken(hex: string, amount: number): string {
   const normalized = hex.replace('#', '')
   if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return hex
@@ -138,8 +156,11 @@ function darken(hex: string, amount: number): string {
   return `#${channel(16)}${channel(8)}${channel(0)}`
 }
 
+// Evita carregar a mesma fonte do Google mais de uma vez por sessao.
 const loadedFonts = new Set<string>()
 
+// Injeta a tag <link> do Google Fonts para uma fonte, se ainda nao tiver
+// sido carregada (nem nesta sessao, nem por um <link> ja presente no DOM).
 function ensureGoogleFont(fontName: string) {
   if (loadedFonts.has(fontName)) return
   loadedFonts.add(fontName)
@@ -151,6 +172,8 @@ function ensureGoogleFont(fontName: string) {
   document.head.appendChild(link)
 }
 
+// Troca o favicon da pagina pela URL configurada, criando a tag <link rel="icon">
+// se o documento ainda nao tiver uma.
 function setFavicon(url: string) {
   let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']")
   if (!link) {
@@ -188,6 +211,9 @@ export function applyStoreTheme(theme: StoreTheme) {
   document.title = theme.storeName || document.title
 }
 
+// Promise compartilhada entre todas as instancias do hook - garante que a
+// config da loja seja buscada uma unica vez, mesmo com varios componentes
+// chamando useStoreTheme ao mesmo tempo.
 let themePromise: Promise<StoreTheme> | null = null
 
 function fetchStoreTheme(): Promise<StoreTheme> {

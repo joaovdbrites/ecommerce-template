@@ -19,21 +19,33 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// NewRouter monta o motor gin com todas as rotas da API e o front-end
+// estatico, alem dos middlewares globais (CORS). E chamada uma unica vez na
+// subida do servidor.
 func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 	router := gin.Default()
 	router.Use(cors(cfg.FrontendURL))
+	// service concentra toda a regra de negocio (pedidos, clientes, frete,
+	// etc.); os handlers abaixo so traduzem HTTP <-> chamadas nesse service.
 	service := services.NewService(cfg, db)
 
+	// Checagem simples de "esta no ar", usada por monitoramento/deploy.
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
+	// Rotas publicas da loja: o grupo /api reune tanto endpoints abertos
+	// (catalogo, frete, checkout) quanto rotas administrativas que exigem
+	// RequireAdmin - a separacao por grupo e so de prefixo, a autenticacao
+	// e feita rota a rota.
 	api := router.Group("/api")
 	{
+		// Devolve o catalogo completo montado pelo Organizador (admin).
 		api.GET("/organizer", func(c *gin.Context) {
 			data, err := service.GetOrganizerStore(c.Request.Context())
 			respond(c, data, err)
 		})
+		// Sobrescreve o catalogo inteiro de uma vez; so admin pode publicar.
 		api.PUT("/organizer", middlewares.RequireAdmin(cfg), func(c *gin.Context) {
 			var input json.RawMessage
 			if err := c.ShouldBindJSON(&input); err != nil {
@@ -43,6 +55,8 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			data, err := service.SaveOrganizerStore(c.Request.Context(), input)
 			respond(c, data, err)
 		})
+		// Registra eventos de navegacao (visualizacao/clique) por produto,
+		// usados nas metricas do admin; aceita cliente anonimo ou logado.
 		api.POST("/store/events", func(c *gin.Context) {
 			var input struct {
 				ProductID string `json:"productId"`
@@ -56,10 +70,13 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			err := service.RecordProductEvent(c.Request.Context(), optionalCustomerID(cfg, c), input.SessionID, input.ProductID, input.Type)
 			respond(c, true, err)
 		})
+		// Configuracao publica da loja (banners, destaques, etc.) usada pelo
+		// front-end ao montar a home.
 		api.GET("/store/config", func(c *gin.Context) {
 			data, err := service.StoreConfig(c.Request.Context())
 			respond(c, data, err)
 		})
+		// Cotacao de frete usada no carrinho/checkout antes de fechar pedido.
 		api.POST("/shipping/quote", func(c *gin.Context) {
 			var input shipping.QuoteInput
 			if err := c.ShouldBindJSON(&input); err != nil {
@@ -69,6 +86,8 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			data, err := service.QuoteShipping(c.Request.Context(), input)
 			respond(c, data, err)
 		})
+		// Valida um cupom digitado no carrinho e devolve o desconto aplicavel
+		// aquele subtotal.
 		api.POST("/store/validate-coupon", func(c *gin.Context) {
 			var input struct {
 				Code     string  `json:"code"`
@@ -81,6 +100,8 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			data, err := service.ValidateCoupon(c.Request.Context(), input.Code, input.Subtotal)
 			respond(c, data, err)
 		})
+		// Consulta direta as opcoes dos Correios (SEDEX/PAC) a partir de um
+		// CEP de destino; CEP de origem fixo e o da loja.
 		api.GET("/shipping/correios", func(c *gin.Context) {
 			cep := c.Query("cep")
 			weightGrams, _ := strconv.Atoi(c.DefaultQuery("weight", "0"))
@@ -91,6 +112,9 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			}
 			respond(c, data, nil)
 		})
+		// Fecha o pedido: le o cliente (se logado) do token opcional e o
+		// dominio publico da requisicao, que o Mercado Pago vai usar para
+		// avisar quando o pagamento for aprovado.
 		api.POST("/checkout", func(c *gin.Context) {
 			var input services.CheckoutInput
 			if err := c.ShouldBindJSON(&input); err != nil {
@@ -102,10 +126,13 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			data, err := service.CreateOrder(c.Request.Context(), input)
 			respond(c, data, err)
 		})
+		// Consulta publica de um pedido pelo id (pagina de acompanhamento).
 		api.GET("/order/:id", func(c *gin.Context) {
 			data, err := service.GetOrderPublic(c.Request.Context(), c.Param("id"))
 			respond(c, data, err)
 		})
+		// Lista de pedidos do admin, com paginacao e filtros (busca, status,
+		// forma de pagamento, intervalo de datas).
 		api.GET("/orders", middlewares.RequireAdmin(cfg), func(c *gin.Context) {
 			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 			limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
@@ -121,10 +148,12 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			data, err := service.Orders(c.Request.Context(), filter)
 			respond(c, data, err)
 		})
+		// Lista de clientes do admin, com busca por nome/e-mail/CPF.
 		api.GET("/customers", middlewares.RequireAdmin(cfg), func(c *gin.Context) {
 			data, err := service.Customers(c.Request.Context(), c.Query("search"), c.GetString("userID"))
 			respond(c, data, err)
 		})
+		// Ficha detalhada de um cliente, vista pelo admin.
 		api.GET("/customers/:id", middlewares.RequireAdmin(cfg), func(c *gin.Context) {
 			data, err := service.CustomerProfile(c.Request.Context(), c.Param("id"), c.GetString("userID"))
 			respond(c, data, err)
@@ -155,6 +184,8 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 				c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 				return
 			}
+			// So essas chaves podem ser gravadas por aqui - evita que a rota
+			// vire uma gaveta generica de configuracao arbitraria.
 			allowedKeys := map[string]bool{
 				"mp_access_token": true, "mp_public_key": true, "mp_webhook_secret": true, "google_client_id": true,
 			}
@@ -210,10 +241,14 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			data, err := service.AdminOrderNotifications(c.Request.Context(), limit)
 			respond(c, data, err)
 		})
+		// So o contador, para o badge no sino de notificacoes (evita trazer a
+		// lista inteira so para desenhar o numero).
 		api.GET("/admin/notifications/unread-count", middlewares.RequireAdmin(cfg), func(c *gin.Context) {
 			count, err := service.AdminUnreadOrderCount(c.Request.Context())
 			respond(c, gin.H{"unread": count}, err)
 		})
+		// Marca uma notificacao como lida e devolve o detalhe do pedido junto,
+		// para abrir o modal sem uma segunda chamada.
 		api.POST("/admin/notifications/:id/read", middlewares.RequireAdmin(cfg), func(c *gin.Context) {
 			detail, err := service.AdminOrderNotificationDetail(c.Request.Context(), c.Param("id"))
 			if err != nil {
@@ -278,6 +313,8 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			err := service.RequestPasswordReset(c.Request.Context(), identifier)
 			respond(c, gin.H{"sent": true}, err)
 		})
+		// Etapa 2 da recuperacao: troca o token recebido por e-mail por uma
+		// senha nova.
 		api.POST("/auth/customer/reset", middlewares.RateLimit("reset", 10, time.Minute), func(c *gin.Context) {
 			var input struct {
 				Token    string `json:"token"`
@@ -290,6 +327,8 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			data, err := service.ResetPassword(c.Request.Context(), input.Token, input.Password)
 			respond(c, data, err)
 		})
+		// Proxy simples para a API publica do ViaCEP, usado para autocompletar
+		// endereco a partir do CEP digitado no checkout/cadastro.
 		api.GET("/cep/:cep", func(c *gin.Context) {
 			cep := strings.ReplaceAll(c.Param("cep"), "-", "")
 			resp, err := http.Get("https://viacep.com.br/ws/" + cep + "/json/")
@@ -329,6 +368,7 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			data, err := service.CustomerFieldConflicts(c.Request.Context(), input.Email, input.CPF, input.Phone, customerIDFromHeader(cfg, c))
 			respond(c, gin.H{"conflicts": data}, err)
 		})
+		// Login/cadastro via credencial do Google One Tap/Sign-In.
 		api.POST("/auth/customer/google", middlewares.RateLimit("google", 10, time.Minute), func(c *gin.Context) {
 			var input struct {
 				Credential string `json:"credential"`
@@ -351,6 +391,8 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			data, err := service.RegisterCustomer(c.Request.Context(), customerIDFromHeader(cfg, c), input)
 			respond(c, data, err)
 		})
+		// Etapa 2 do login: confirma a senha para o identificador validado em
+		// /identify.
 		api.POST("/auth/customer/login", middlewares.RateLimit("login", 10, time.Minute), func(c *gin.Context) {
 			var input struct {
 				Identifier string `json:"identifier"`
@@ -370,18 +412,25 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 		})
 	}
 
+	// Rotas autenticadas do cliente: exigem token JWT de escopo "customer"
+	// (middlewares.JWT), diferente das rotas de admin acima que exigem role
+	// "admin" dentro desse mesmo escopo.
 	customer := api.Group("/customer")
 	customer.Use(middlewares.JWT(cfg, "customer"))
 	{
+		// Perfil do proprio cliente logado (dados usados na area "Minha conta").
 		customer.GET("/me", func(c *gin.Context) {
 			userID := c.GetString("userID")
 			data, err := service.CustomerProfile(c.Request.Context(), userID, userID)
 			respond(c, data, err)
 		})
+		// Detalhe de um pedido do proprio cliente (confere o dono antes de
+		// devolver, dentro do service).
 		customer.GET("/orders/:id", func(c *gin.Context) {
 			data, err := service.CustomerOrder(c.Request.Context(), c.GetString("userID"), c.Param("id"))
 			respond(c, data, err)
 		})
+		// Atualiza dados cadastrais do cliente logado.
 		customer.PUT("/me", func(c *gin.Context) {
 			var input services.CustomerProfilePayload
 			if err := c.ShouldBindJSON(&input); err != nil {
@@ -391,6 +440,7 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			data, err := service.UpdateCustomerProfile(c.Request.Context(), c.GetString("userID"), input)
 			respond(c, data, err)
 		})
+		// Adiciona um novo endereco de entrega a agenda do cliente.
 		customer.POST("/addresses", func(c *gin.Context) {
 			var input services.CustomerAddressPayload
 			if err := c.ShouldBindJSON(&input); err != nil {
@@ -400,15 +450,23 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			data, err := service.SaveCustomerAddress(c.Request.Context(), c.GetString("userID"), input)
 			respond(c, data, err)
 		})
+		// Define qual endereco salvo e o padrao, usado para pre-preencher o
+		// checkout.
 		customer.PUT("/addresses/:id/default", func(c *gin.Context) {
 			data, err := service.SetDefaultCustomerAddress(c.Request.Context(), c.GetString("userID"), c.Param("id"))
 			respond(c, data, err)
 		})
 	}
 
+	// Serve os uploads (imagens de produto, etc.) enviados pelo admin, e
+	// registra as rotas que entregam o front-end buildado (SPA).
 	router.Static("/uploads", filepath.Join("public", "uploads"))
 	registerFrontend(router)
 
+	// Webhook do Mercado Pago: notificacao assincrona de mudanca de status de
+	// pagamento (ex.: Pix pago). Fica fora do grupo /api/... de proposito, no
+	// nivel do router, pois nao precisa (nem deve) passar pelos middlewares
+	// de autenticacao das rotas de cliente/admin.
 	router.POST("/api/webhooks/mercadopago", func(c *gin.Context) {
 		var input struct {
 			Action string `json:"action"`
@@ -435,6 +493,9 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			return
 		}
 
+		// Confere a assinatura HMAC enviada pelo Mercado Pago antes de confiar
+		// no aviso - sem isso, qualquer um poderia forjar "pagamento aprovado"
+		// so chamando essa URL.
 		if err := service.VerifyMPWebhookSignature(
 			c.Request.Context(), c.GetHeader("x-signature"), c.GetHeader("x-request-id"), paymentID,
 		); err != nil {
@@ -442,6 +503,7 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 			return
 		}
 
+		// Aplica a mudanca de status do pagamento no pedido correspondente.
 		if err := service.HandleMPWebhook(c.Request.Context(), topic, paymentID); err != nil {
 			// 500 de proposito: o Mercado Pago repete a notificacao quando nao
 			// recebe 2xx, entao uma falha passageira (banco fora do ar, por
@@ -455,9 +517,13 @@ func NewRouter(cfg config.Config, db *pgxpool.Pool) *gin.Engine {
 	return router
 }
 
+// registerFrontend serve o build estatico do front-end (SPA) quando ele
+// existe em public/; em desenvolvimento, sem o build, a funcao simplesmente
+// nao registra nada e o front-end roda separado (Vite dev server).
 func registerFrontend(router *gin.Engine) {
 	publicDir := "public"
 	indexPath := filepath.Join(publicDir, "index.html")
+	// Sem index.html nao ha o que servir - ambiente de dev tipicamente.
 	if _, err := os.Stat(indexPath); err != nil {
 		return
 	}
@@ -474,6 +540,8 @@ func registerFrontend(router *gin.Engine) {
 		c.Next()
 	})
 
+	// serveIndex entrega sempre a pagina principal da SPA, sem cache, para o
+	// roteamento do lado do cliente (React Router) assumir a partir dai.
 	serveIndex := func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
 		c.File(indexPath)
@@ -481,6 +549,10 @@ func registerFrontend(router *gin.Engine) {
 
 	router.Static("/assets", filepath.Join(publicDir, "assets"))
 	router.GET("/", serveIndex)
+	// Qualquer caminho desconhecido que nao seja GET nem rota de API/health
+	// cai aqui: devolve a SPA (ela decide se e uma pagina valida ou um 404
+	// interno), e so responde 404 de verdade para API/health ou metodos
+	// diferentes de GET.
 	router.NoRoute(func(c *gin.Context) {
 		if c.Request.Method != http.MethodGet || strings.HasPrefix(c.Request.URL.Path, "/api") || c.Request.URL.Path == "/health" {
 			c.JSON(http.StatusNotFound, gin.H{"message": "not found"})

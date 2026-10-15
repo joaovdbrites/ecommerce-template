@@ -39,6 +39,7 @@ import {
   validateCheckoutForm,
 } from '../utils/checkout'
 
+// Rotulos exibidos na barra de progresso (StepBar) pra cada uma das 4 etapas
 const STEP_LABELS: Record<1 | 2 | 3 | 4, string> = {
   1: 'Carrinho',
   2: 'Endereço',
@@ -46,29 +47,39 @@ const STEP_LABELS: Record<1 | 2 | 3 | 4, string> = {
   4: 'Pagamento',
 }
 
+// Pagina de checkout: fluxo de 4 etapas (carrinho -> endereco -> entrega ->
+// pagamento) usando o Payment Brick do Mercado Pago, alem da tela de Pix
+// (QR Code) quando esse for o metodo escolhido.
 export function CheckoutPage() {
   const { items, updateQuantity, removeItem, clearCart } = useCart()
   const { token, scope, isCustomer, requireAuth } = useAuth()
   const format = useCurrency()
   const navigate = useNavigate()
+  // Etapa atual do fluxo (1 a 4)
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  // Configuracoes da loja vindas do backend: opcoes de frete, chave publica
+  // do Mercado Pago e whatsapp de contato
   const [config, setConfig] = useState<CheckoutConfig>({
     shippingOptions: [],
     mpPublicKey: '',
     storeWhatsapp: '',
   })
   const [profile, setProfile] = useState<CustomerProfile | null>(null)
+  // Dados do formulario de checkout (endereco, contato, cupom, modo de entrega etc)
   const [form, setForm] = useState<CheckoutForm>(CHECKOUT_INITIAL_FORM)
   const [quote, setQuote] = useState<ShippingQuote | null>(null)
   const [couponMessage, setCouponMessage] = useState('')
   const [couponDiscount, setCouponDiscount] = useState(0)
   const [couponApplied, setCouponApplied] = useState(false)
   const [selectedAddressId, setSelectedAddressId] = useState('')
+  // Opcoes de frete dos Correios cotadas pra esse CEP/peso, e qual delas foi escolhida
   const [correiosOptions, setCorreiosOptions] = useState<CorreiosOption[]>([])
   const [selectedCorreios, setSelectedCorreios] = useState<string>('')
   const [searchParams] = useSearchParams()
+  // Dados do QR Code Pix quando o pagamento escolhido gera um Pix (em vez de
+  // aprovar na hora via cartao)
   const [pixData, setPixData] = useState<{ orderId: string; qrCode: string; qrCodeBase64: string } | null>(
     null,
   )
@@ -76,19 +87,26 @@ export function CheckoutPage() {
   const [pixCopied, setPixCopied] = useState(false)
   const [paymentError, setPaymentError] = useState('')
   const [approvedOrderId, setApprovedOrderId] = useState('')
+  // Controlam o ciclo de vida do Payment Brick: qual "chave" de brick ja
+  // ficou pronta (onReady) e qual "chave" estourou o tempo de carregamento
   const [readyBrickKey, setReadyBrickKey] = useState('')
   const [timedOutBrickKey, setTimedOutBrickKey] = useState('')
+  // Mensagem de retorno (ex.: vindo de um redirect de pagamento) tem prioridade
+  // sobre uma mensagem gerada localmente
   const displayMessage = message || paymentReturnMessage(searchParams.get('status'))
   // Sem conta o checkout nao passa do carrinho, mesmo se o cliente sair da
   // conta no meio do processo.
   const activeStep: 1 | 2 | 3 | 4 = isCustomer ? step : 1
 
+  // Inicializa o SDK do Mercado Pago assim que a chave publica da loja chegar
   useEffect(() => {
     if (config.mpPublicKey) {
       initMercadoPago(config.mpPublicKey, { locale: 'pt-BR' })
     }
   }, [config.mpPublicKey])
 
+  // Enquanto espera a confirmacao de um pagamento Pix, faz polling no pedido
+  // a cada 5s pra saber quando o status virou "paid"
   useEffect(() => {
     if (!pixData || pixPaid) return
     const interval = window.setInterval(() => {
@@ -104,10 +122,12 @@ export function CheckoutPage() {
     return () => window.clearInterval(interval)
   }, [pixData, pixPaid])
 
+  // Subtotal dos itens do carrinho (sem frete/desconto)
   const subtotal = useMemo(
     () => items.reduce((sum, item) => sum + item.finalPrice * item.quantity, 0),
     [items],
   )
+  // Peso total do carrinho, usado pra cotar o frete
   const totalWeight = useMemo(
     () => items.reduce((sum, item) => sum + item.weightGrams * item.quantity, 0),
     [items],
@@ -115,6 +135,8 @@ export function CheckoutPage() {
 
   const deliveryOptions = config.shippingOptions
 
+  // Garante que o modo de entrega selecionado seja sempre uma opcao valida
+  // (cai pra primeira opcao disponivel se o valor salvo no form nao existir mais)
   const deliveryMode = useMemo(
     () =>
       deliveryOptions.some((option) => option.value === form.deliveryMode)
@@ -123,6 +145,7 @@ export function CheckoutPage() {
     [deliveryOptions, form.deliveryMode],
   )
 
+  // Carrega a configuracao da loja (frete, Mercado Pago, whatsapp) uma vez ao montar
   useEffect(() => {
     api.get<CheckoutConfig>('/store/config').then((data) => {
       setConfig(data)
@@ -133,6 +156,8 @@ export function CheckoutPage() {
     })
   }, [])
 
+  // Pre-preenche o formulario com os dados e o endereco padrao do cliente
+  // logado, assim que a sessao de cliente estiver disponivel
   useEffect(() => {
     if (token && scope === 'customer') {
       api
@@ -160,6 +185,8 @@ export function CheckoutPage() {
     }
   }, [token, scope])
 
+  // Preenche o formulario com um dos enderecos salvos do cliente, ao
+  // selecionar esse endereco na etapa 2
   function applyAddress(addressId: string) {
     if (!profile) return
     const nextAddress = profile.addresses.find((address) => address.id === addressId)
@@ -177,6 +204,9 @@ export function CheckoutPage() {
     }))
   }
 
+  // Cota o frete sempre que o modo de entrega, CEP, cidade, subtotal ou peso
+  // mudarem — Correios usa um endpoint proprio que devolve varias opcoes,
+  // os demais modos usam uma cotacao unica
   useEffect(() => {
     if (!deliveryMode || !form.cep || subtotal <= 0 || totalWeight <= 0) {
       return
@@ -205,6 +235,8 @@ export function CheckoutPage() {
       .catch(() => setQuote(null))
   }, [form.cep, deliveryMode, form.city, subtotal, totalWeight, couponDiscount])
 
+  // Normaliza a cotacao de frete ativa num formato unico (amount + label),
+  // vindo da opcao de Correios selecionada ou da cotacao simples
   const selectedCorreiosOption = correiosOptions.find((o) => o.code === selectedCorreios)
   const activeQuote =
     deliveryMode === 'correios'
@@ -215,8 +247,12 @@ export function CheckoutPage() {
         ? quote
         : null
   const total = subtotal - couponDiscount + (activeQuote?.amount ?? 0)
+  // Validacao centralizada do formulario (nome, email, endereco etc) usada
+  // tanto pra bloquear avanco de etapa quanto pra liberar o Payment Brick
   const validation = validateCheckoutForm(form)
   const missingRequiredFields = !validation.valid
+  // Erros de endereco (etapa 2) ignoram o erro de "selecione a entrega", que
+  // so faz sentido na etapa 3
   const addressErrors = validation.errors.filter((error) => error !== 'Selecione a entrega')
   const step2Valid = addressErrors.length === 0
   const step3Valid = Boolean(deliveryMode) && (deliveryMode !== 'correios' || Boolean(selectedCorreios))
@@ -231,6 +267,8 @@ export function CheckoutPage() {
   const brickReady = readyBrickKey === brickKey
   const brickTimedOut = timedOutBrickKey === brickKey
 
+  // Troca de etapa e rola a pagina de volta pro topo, pra sempre comecar a
+  // nova etapa visivel (sem isso o usuario ficaria no meio da etapa anterior)
   function goToStep(next: 1 | 2 | 3 | 4) {
     setStep(next)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -256,6 +294,10 @@ export function CheckoutPage() {
     return () => window.clearTimeout(timeout)
   }, [brickKey, showBrick])
 
+  // Envia o pedido pro backend junto com os dados de pagamento gerados pelo
+  // Payment Brick; trata as 3 respostas possiveis: Pix pendente (mostra QR
+  // Code), pagamento rejeitado/cancelado (lanca erro pro Brick mostrar), ou
+  // aprovado/em analise (limpa o carrinho e mostra mensagem de confirmacao)
   async function handlePayment(brickData: { formData?: unknown }): Promise<void> {
     const formData = (brickData.formData ?? {}) as Record<string, unknown>
     setPaymentError('')
@@ -318,6 +360,8 @@ export function CheckoutPage() {
     }
   }
 
+  // Pagamento via Pix gerado: substitui o fluxo normal por uma tela dedicada
+  // de QR Code / copia-e-cola ate a confirmacao (ou ja confirmado)
   if (pixData) {
     return (
       <EmptyState
@@ -330,6 +374,8 @@ export function CheckoutPage() {
             : 'Abra o app do seu banco, escolha pagar com Pix e escaneie o codigo abaixo, ou copie o codigo e cole no app.'
         }
         action={
+          // Ja confirmado: oferece contato via whatsapp e volta a loja;
+          // ainda pendente: mostra o QR Code e botao de copiar o codigo
           pixPaid ? (
             <div className="flex flex-col items-center gap-3">
               {config.storeWhatsapp ? (
@@ -379,6 +425,9 @@ export function CheckoutPage() {
     )
   }
 
+  // Carrinho vazio: pode ser porque o cliente ainda nao comprou nada, ou
+  // porque o pedido acabou de ser concluido (clearCart esvaziou o carrinho) -
+  // displayMessage diferencia os dois casos na tela
   if (items.length === 0) {
     return (
       <EmptyState
@@ -422,6 +471,7 @@ export function CheckoutPage() {
         onSubmit={(event) => event.preventDefault()}
       >
         <div className={`space-y-6 ${activeStep === 4 ? 'mx-auto w-full max-w-2xl' : ''}`}>
+          {/* Etapa 1 - Carrinho: lista de itens com controle de quantidade/remocao e campo de cupom */}
           {activeStep === 1 && (
             <Reveal>
               <section className="surface-panel p-5 sm:p-6">
@@ -443,6 +493,7 @@ export function CheckoutPage() {
                         <p className="mt-1 text-sm text-[#6b665f]">
                           {item.brand} • {format(item.finalPrice)}
                         </p>
+                        {/* Selo de desconto so aparece quando o item tem um label configurado */}
                         {item.discountLabel ? (
                           <p className="mt-1 text-xs text-[#0f8a5f]">{item.discountLabel}</p>
                         ) : null}
@@ -478,6 +529,7 @@ export function CheckoutPage() {
                   ))}
                 </div>
 
+                {/* Campo de cupom: valida no backend e aplica o desconto no subtotal */}
                 <div className="mt-6 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
                   <InputField
                     label="Cupom"
@@ -518,11 +570,13 @@ export function CheckoutPage() {
                     {couponApplied ? 'Aplicado' : 'Aplicar'}
                   </Button>
                 </div>
+                {/* Feedback de sucesso/erro da validacao do cupom */}
                 {couponMessage ? <p className="mt-2 text-xs text-[#6b665f]">{couponMessage}</p> : null}
               </section>
             </Reveal>
           )}
 
+          {/* Etapa 2 - Endereco: escolhe entre os enderecos salvos do cliente */}
           {activeStep === 2 && (
             <Reveal>
               <section>
@@ -530,6 +584,7 @@ export function CheckoutPage() {
                   Selecione seu endereço
                 </p>
 
+                {/* Sem enderecos cadastrados, avisa em vez de mostrar uma lista vazia */}
                 {profile && profile.addresses.length > 0 ? (
                   <div className="space-y-2">
                     {profile.addresses.map((address, index) => {
@@ -562,6 +617,8 @@ export function CheckoutPage() {
             </Reveal>
           )}
 
+          {/* Etapa 3 - Entrega: escolhe o modo de envio e, se for Correios,
+              qual das opcoes cotadas usar */}
           {activeStep === 3 && (
             <Reveal>
               <section className="surface-panel p-5 sm:p-6">
@@ -588,6 +645,7 @@ export function CheckoutPage() {
                           />
                           <span className="text-sm font-semibold text-[#2a0f3d]">{option.label}</span>
                         </span>
+                        {/* So mostra o preco quando essa opcao esta selecionada e ja ha cotacao */}
                         {isSelected && activeQuote ? (
                           <span className="text-sm font-semibold text-[#3a164f]">
                             {format(activeQuote.amount)}
@@ -598,6 +656,7 @@ export function CheckoutPage() {
                   })}
                 </div>
 
+                {/* Sub-lista de opcoes dos Correios, so quando esse modo foi escolhido e ja ha cotacoes */}
                 {deliveryMode === 'correios' && correiosOptions.length > 0 ? (
                   <div className="mt-5 space-y-3">
                     <p className="eyebrow">Opção dos Correios</p>
@@ -629,6 +688,8 @@ export function CheckoutPage() {
             </Reveal>
           )}
 
+          {/* Etapa 4 - Revisao: resume endereco e entrega escolhidos antes do
+              formulario de pagamento (renderizado no bloco Reveal seguinte) */}
           {activeStep === 4 && (
             <Reveal>
               <section className="surface-panel p-5 sm:p-6">
@@ -637,6 +698,7 @@ export function CheckoutPage() {
                 <div className="mt-6 grid gap-3 sm:grid-cols-2">
                   <div className="surface-soft p-4">
                     <p className="eyebrow mb-1">Endereço de entrega</p>
+                    {/* So mostra os dados se pelo menos um campo de endereco foi preenchido */}
                     {form.street || form.number || form.cep ? (
                       <>
                         <p className="text-sm text-[#2a0f3d]">
@@ -666,6 +728,7 @@ export function CheckoutPage() {
                   </div>
                 </div>
 
+                {/* Mensagem de retorno (ex.: redirect de pagamento anterior) */}
                 {displayMessage ? (
                   <p className="mt-5 rounded-[22px] border border-stone-200 bg-[#eadcf0] px-4 py-3 text-sm text-[#6b665f]">
                     {displayMessage}
@@ -675,6 +738,9 @@ export function CheckoutPage() {
             </Reveal>
           )}
 
+          {/* Payment Brick do Mercado Pago, com os estados de bloqueio
+              possiveis antes dele poder aparecer: dados invalidos, loja sem
+              pagamento online configurado, ou timeout de carregamento */}
           {activeStep === 4 ? (
             <Reveal delay={60}>
               <div className="space-y-4">
@@ -695,11 +761,13 @@ export function CheckoutPage() {
                   <div
                     className={`surface-panel overflow-hidden p-2 ${loading ? 'pointer-events-none opacity-60' : ''}`}
                   >
+                    {/* Trava cliques no Brick enquanto o pagamento esta sendo processado */}
                     {loading ? (
                       <p className="px-4 pt-3 text-center text-xs font-medium text-[#6b665f]">
                         Processando pagamento...
                       </p>
                     ) : null}
+                    {/* Aviso de carregamento ate o Brick disparar onReady */}
                     {!brickReady ? (
                       <p className="px-4 pt-3 text-center text-xs font-medium text-[#6b665f]">
                         Carregando formulario de pagamento...
@@ -721,6 +789,7 @@ export function CheckoutPage() {
                   </div>
                 )}
 
+                {/* Erro de pagamento (rejeitado, cancelado, falha ao enviar) */}
                 {paymentError ? (
                   <p className="rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
                     {paymentError}
@@ -730,6 +799,8 @@ export function CheckoutPage() {
             </Reveal>
           ) : null}
 
+          {/* Botao de voltar so na etapa de pagamento (as outras etapas usam
+              o botao Voltar do resumo lateral) */}
           {activeStep === 4 ? (
             <div className="flex items-center justify-between gap-3">
               <Button type="button" variant="secondary" onClick={() => goToStep(3)}>
@@ -777,6 +848,7 @@ export function CheckoutPage() {
   )
 }
 
+// Barra de progresso com os 4 passos do checkout, no topo da pagina
 function StepBar({ step }: { step: 1 | 2 | 3 | 4 }) {
   const steps = [1, 2, 3, 4] as const
   return (
@@ -787,6 +859,7 @@ function StepBar({ step }: { step: 1 | 2 | 3 | 4 }) {
         const Icon = item === 1 ? ShoppingBag : item === 2 ? MapPin : item === 3 ? Truck : CreditCard
         return (
           <li key={item} className="flex items-center gap-2 sm:gap-4">
+            {/* Linha conectora entre os icones; nao mostra antes do primeiro passo */}
             {index > 0 ? (
               <span
                 className={`h-0.5 w-6 rounded-full sm:w-12 ${isDone || isActive ? 'bg-[#5b247f]' : 'bg-stone-200'}`}

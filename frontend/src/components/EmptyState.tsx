@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 
+// Mensagem de "nada para mostrar" (carrinho vazio, busca sem resultado, etc.),
+// com eyebrow, titulo, descricao e uma acao opcional (ex: botao "Ver catalogo").
 export function EmptyState({
   eyebrow,
   title,
@@ -28,5 +30,6 @@ export function EmptyState({
 
   if (!fullPage) return card
 
+  // Centraliza o cartao verticalmente quando ele e o conteudo principal da pagina.
   return <div className="flex min-h-[60vh] items-center justify-center py-6">{card}</div>
 }

@@ -3,6 +3,8 @@ import { useEffect } from 'react'
 
 type ToastTone = 'success' | 'error'
 
+// Notificacao temporaria no canto da tela (sucesso ou erro), que se fecha
+// sozinha ou pelo botao de X.
 export function Toast({
   message,
   tone = 'success',
@@ -12,6 +14,7 @@ export function Toast({
   tone?: ToastTone
   onClose: () => void
 }) {
+  // Fecha o toast automaticamente apos 4s.
   useEffect(() => {
     const timer = window.setTimeout(onClose, 4000)
     return () => window.clearTimeout(timer)

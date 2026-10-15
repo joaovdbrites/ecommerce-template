@@ -5,8 +5,12 @@ import { api } from '../services/api'
 // fica sem destino valido (string vazia) em vez de usar um numero de outra loja.
 const FALLBACK_WHATSAPP = ''
 
+// Promise compartilhada entre instancias do hook, igual useStoreTheme -
+// garante uma unica busca mesmo com varios componentes usando useStoreWhatsapp.
 let whatsappPromise: Promise<string> | null = null
 
+// Busca o numero de WhatsApp configurado; qualquer falha (rede, config
+// ausente) cai no fallback vazio em vez de propagar o erro.
 function fetchStoreWhatsapp(): Promise<string> {
   if (!whatsappPromise) {
     whatsappPromise = api

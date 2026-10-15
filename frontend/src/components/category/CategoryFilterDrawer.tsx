@@ -19,10 +19,12 @@ const sliderThumbClass =
   '[&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white ' +
   '[&::-moz-range-thumb]:bg-[#d89a28]'
 
+// Titulo de uma secao de filtro (ex: "Preço", "Marcas").
 function SectionTitle({ children }: { children: ReactNode }) {
   return <h3 className="text-xs font-bold uppercase tracking-[0.18em] text-[#d89a28]">{children}</h3>
 }
 
+// Linha de filtro com label e checkbox, reaproveitada por entrega, marcas, volume e ordenacao.
 function CheckRow({ label, checked, onToggle }: { label: string; checked: boolean; onToggle: () => void }) {
   return (
     <label className="flex items-center justify-between gap-3 py-2 text-sm text-[#2a0f3d]">
@@ -37,6 +39,8 @@ function CheckRow({ label, checked, onToggle }: { label: string; checked: boolea
   )
 }
 
+// Slider de faixa de preco com dois cabos (minimo e maximo), desenhado com dois
+// <input type="range"> sobrepostos e uma barra colorida entre eles.
 function PriceRangeSlider({
   bounds,
   value,
@@ -49,6 +53,7 @@ function PriceRangeSlider({
   const [boundMin, boundMax] = bounds
   const [lo, hi] = value
   const span = boundMax - boundMin || 1
+  // Posicao em % de cada cabo, para desenhar a barra preenchida entre eles.
   const pctLo = ((lo - boundMin) / span) * 100
   const pctHi = ((hi - boundMin) / span) * 100
 
@@ -81,6 +86,8 @@ function PriceRangeSlider({
   )
 }
 
+// Conteudo compartilhado dos filtros (entrega, preco, marca, volume, ordenar),
+// usado tanto pelo drawer mobile quanto pelo painel lateral de desktop.
 function FilterSections({
   filters,
   items,
@@ -92,6 +99,7 @@ function FilterSections({
 }) {
   const [brandSearch, setBrandSearch] = useState('')
 
+  // Marcas distintas presentes nos itens da categoria, em ordem alfabetica pt-BR.
   const brands = useMemo(
     () =>
       Array.from(
@@ -99,9 +107,11 @@ function FilterSections({
       ).sort((left, right) => left.localeCompare(right, 'pt-BR')),
     [items],
   )
+  // Marcas filtradas pelo texto digitado no campo de busca de marca.
   const visibleBrands = brands.filter((brand) =>
     brand.toLocaleLowerCase('pt-BR').includes(brandSearch.trim().toLocaleLowerCase('pt-BR')),
   )
+  // Volumes (ml) distintos presentes nos itens, ordenados do menor para o maior.
   const volumes = useMemo(
     () =>
       Array.from(
@@ -112,11 +122,13 @@ function FilterSections({
     [items],
   )
 
+  // Faixa de preco possivel (min/max reais dos itens), usada como limite do slider.
   const prices = items.map((item) => item.price ?? 0).filter((price) => price > 0)
   const lowestPrice = prices.length > 0 ? Math.floor(Math.min(...prices)) : 0
   const highestPrice = prices.length > 0 ? Math.ceil(Math.max(...prices)) : 0
   const priceValue: [number, number] = [filters.minPrice ?? lowestPrice, filters.maxPrice ?? highestPrice]
 
+  // Adiciona ou remove um valor de uma lista de filtro (marcas/volumes selecionados).
   const toggleInList = (list: string[], value: string) =>
     list.includes(value) ? list.filter((current) => current !== value) : [...list, value]
 
@@ -253,7 +265,10 @@ type CategoryFilterDrawerProps = {
   onClose: () => void
 }
 
+// Drawer de filtros em tela cheia para mobile: abre por cima de tudo (via
+// portal) e bloqueia o scroll do fundo enquanto estiver aberto.
 export function CategoryFilterDrawer({ open, items, value, onChange, onClose }: CategoryFilterDrawerProps) {
+  // Enquanto aberto: trava o scroll da pagina e fecha com a tecla Esc.
   useEffect(() => {
     if (!open) return
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -267,6 +282,7 @@ export function CategoryFilterDrawer({ open, items, value, onChange, onClose }: 
     }
   }, [onClose, open])
 
+  // Nao renderiza nada (nem o portal) quando o drawer esta fechado.
   if (!open) return null
 
   return createPortal(
@@ -303,6 +319,8 @@ export function CategoryFilterDrawer({ open, items, value, onChange, onClose }: 
   )
 }
 
+// Versao em painel lateral fixo dos mesmos filtros, usada no layout de desktop
+// (ao lado da grade de produtos, em vez de um drawer que cobre a tela).
 export function CategoryFilterPanel({
   items,
   value,

@@ -4,6 +4,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 type ButtonVariant = 'primary' | 'secondary' | 'ghost'
 type ButtonSize = 'sm' | 'md' | 'lg'
 
+// Classes de cor/fundo para cada variacao visual do botao.
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
     'bg-[linear-gradient(160deg,var(--color-primary)_0%,var(--color-primary-dark)_100%)] text-white shadow-[0_24px_48px_-26px_color-mix(in_srgb,var(--color-primary)_70%,black)] hover:brightness-90 disabled:bg-stone-300 disabled:text-stone-500',
@@ -12,12 +13,16 @@ const variantClasses: Record<ButtonVariant, string> = {
   ghost: 'bg-transparent text-[#2a0f3d] hover:bg-black/5 disabled:text-stone-400',
 }
 
+// Classes de espacamento/tamanho de fonte para cada tamanho do botao.
 const sizeClasses: Record<ButtonSize, string> = {
   sm: 'px-4 py-2.5 text-sm',
   md: 'px-5 py-3 text-sm',
   lg: 'px-6 py-4 text-base',
 }
 
+// Monta a string de classes do botao a partir de variante/tamanho/largura,
+// reaproveitada tanto pelo componente Button quanto por outros elementos
+// (links, labels) que precisam parecer um botao sem ser um <button>.
 export function buttonClassName({
   variant = 'primary',
   size = 'md',
@@ -40,6 +45,8 @@ export function buttonClassName({
     .join(' ')
 }
 
+// Botao padrao da loja: aplica variante/tamanho via buttonClassName e repassa
+// os demais props HTML (onClick, disabled, etc.) direto para o <button>.
 export function Button({
   children,
   variant = 'primary',

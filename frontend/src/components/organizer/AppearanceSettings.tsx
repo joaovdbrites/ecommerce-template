@@ -13,6 +13,8 @@ import {
   type StoreTheme,
 } from '../../hooks/useStoreTheme'
 
+// Mapeia cada campo do StoreTheme para a chave usada na tabela de settings
+// do backend (endpoint /admin/theme-settings), uma linha por chave salva.
 const THEME_KEY_BY_FIELD: Record<keyof StoreTheme, string> = {
   storeName: 'theme_store_name',
   logoUrl: 'theme_logo_url',
@@ -36,15 +38,21 @@ const THEME_KEY_BY_FIELD: Record<keyof StoreTheme, string> = {
   extraLinks: 'theme_extra_links',
 }
 
+// Converte o valor de um campo do tema para string antes de enviar ao
+// backend - extraLinks e uma lista, entao precisa virar JSON primeiro.
 function serializeThemeValue(field: keyof StoreTheme, value: StoreTheme[keyof StoreTheme]): string {
   if (field === 'extraLinks') return JSON.stringify(value)
   return String(value)
 }
 
+// Gera um id unico para cada link extra do rodape (usa crypto.randomUUID
+// quando disponivel, com um fallback simples baseado em timestamp).
 function createLinkId() {
   return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `link-${Date.now()}`
 }
 
+// Le um arquivo de imagem escolhido pelo admin (logo, favicon, banner) e
+// devolve como data URL, para poder salvar direto no valor do tema.
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -60,11 +68,15 @@ function readFileAsDataUrl(file: File): Promise<string> {
 // que persiste no backend para a loja publica continuar com o tema depois
 // de recarregar a pagina.
 export function AppearanceSettings({ token }: { token: string | null }) {
+  // Estado local do tema sendo editado, inicializado com os valores padrao
+  // ate o fetch abaixo trazer o que esta salvo no backend.
   const [theme, setTheme] = useState<StoreTheme>(DEFAULT_STORE_THEME)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
 
+  // Busca o tema salvo assim que o painel monta (ou o token muda) e ja
+  // aplica no CSS na hora, pra esse mesmo painel renderizar com o tema real.
   useEffect(() => {
     api
       .get<Record<string, string>>('/admin/theme-settings', token ?? undefined)
@@ -77,6 +89,8 @@ export function AppearanceSettings({ token }: { token: string | null }) {
       .finally(() => setLoading(false))
   }, [token])
 
+  // Atualiza um campo do tema no estado e reaplica as variaveis CSS na hora -
+  // e assim que o preview ao vivo funciona antes de clicar em "Salvar".
   function update<K extends keyof StoreTheme>(field: K, value: StoreTheme[K]) {
     setTheme((current) => {
       const next = { ...current, [field]: value }
@@ -85,6 +99,8 @@ export function AppearanceSettings({ token }: { token: string | null }) {
     })
   }
 
+  // Persiste todos os campos do tema no backend (um PUT por chave) para que
+  // a loja publica continue com o tema depois de recarregar a pagina.
   async function handleSave() {
     setSaving(true)
     setNotice('')
@@ -108,6 +124,8 @@ export function AppearanceSettings({ token }: { token: string | null }) {
 
   return (
     <SettingsTopic title="Aparência">
+      {/* Enquanto o fetch do tema nao termina, mostra so um aviso de
+          carregando no lugar do formulario inteiro. */}
       {loading ? (
         <div className="organizer-surface p-4">
           <p className="text-xs text-[#6b665f]">Carregando...</p>
@@ -116,6 +134,7 @@ export function AppearanceSettings({ token }: { token: string | null }) {
         <div className="space-y-4">
           <PreviewCard theme={theme} />
 
+          {/* Nome da loja e imagens (logo, favicon, banner da home). */}
           <div className="organizer-surface p-4">
             <h3 className="text-sm font-semibold text-[#3a164f]">Identidade</h3>
             <p className="mt-1 text-xs leading-5 text-[#6b665f]">
@@ -151,6 +170,7 @@ export function AppearanceSettings({ token }: { token: string | null }) {
             </div>
           </div>
 
+          {/* Paleta de cores (primaria, destaque, fundo, sucesso, erro). */}
           <div className="organizer-surface p-4">
             <h3 className="text-sm font-semibold text-[#3a164f]">Cores</h3>
             <p className="mt-1 text-xs leading-5 text-[#6b665f]">
@@ -165,6 +185,7 @@ export function AppearanceSettings({ token }: { token: string | null }) {
             </div>
           </div>
 
+          {/* Fonte dos titulos e do corpo de texto do site. */}
           <div className="organizer-surface p-4">
             <h3 className="text-sm font-semibold text-[#3a164f]">Tipografia</h3>
             <p className="mt-1 text-xs leading-5 text-[#6b665f]">Fontes usadas em títulos e no texto corrido.</p>
@@ -198,6 +219,7 @@ export function AppearanceSettings({ token }: { token: string | null }) {
             </div>
           </div>
 
+          {/* Cor de tingimento aplicada nos icones do site e do painel. */}
           <div className="organizer-surface p-4">
             <h3 className="text-sm font-semibold text-[#3a164f]">Ícones</h3>
             <p className="mt-1 text-xs leading-5 text-[#6b665f]">
@@ -208,6 +230,7 @@ export function AppearanceSettings({ token }: { token: string | null }) {
             </div>
           </div>
 
+          {/* Formato dos cantos dos botoes (reto, arredondado ou pilula). */}
           <div className="organizer-surface p-4">
             <h3 className="text-sm font-semibold text-[#3a164f]">Botões</h3>
             <p className="mt-1 text-xs leading-5 text-[#6b665f]">Formato dos cantos dos botões em todo o site.</p>
@@ -226,6 +249,7 @@ export function AppearanceSettings({ token }: { token: string | null }) {
             </div>
           </div>
 
+          {/* Formato dos cantos e intensidade da sombra de janelas/modais. */}
           <div className="organizer-surface p-4">
             <h3 className="text-sm font-semibold text-[#3a164f]">Janelas e modais</h3>
             <p className="mt-1 text-xs leading-5 text-[#6b665f]">
@@ -257,6 +281,7 @@ export function AppearanceSettings({ token }: { token: string | null }) {
             </div>
           </div>
 
+          {/* Densidade geral dos espacos internos (compacto/confortavel/espacoso). */}
           <div className="organizer-surface p-4">
             <h3 className="text-sm font-semibold text-[#3a164f]">Espaçamento</h3>
             <p className="mt-1 text-xs leading-5 text-[#6b665f]">
@@ -277,6 +302,7 @@ export function AppearanceSettings({ token }: { token: string | null }) {
             </div>
           </div>
 
+          {/* Texto do rodape, WhatsApp, e-mail de contato, Instagram e links extras. */}
           <div className="organizer-surface p-4">
             <h3 className="text-sm font-semibold text-[#3a164f]">Rodapé e redes sociais</h3>
             <p className="mt-1 text-xs leading-5 text-[#6b665f]">
@@ -328,6 +354,8 @@ export function AppearanceSettings({ token }: { token: string | null }) {
   )
 }
 
+// Campo de cor com color picker nativo + input de texto em paralelo, os
+// dois sincronizados com o mesmo valor (hex).
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <Field label={label}>
@@ -349,6 +377,8 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
   )
 }
 
+// Campo de upload de imagem (logo, favicon, banner): mostra uma previa
+// quando ja tem valor, um input de arquivo e um botao para remover.
 function ImageField({
   label,
   hint,
@@ -395,6 +425,8 @@ function ImageField({
   )
 }
 
+// Editor da lista de links extras do rodape (ex.: TikTok, Pinterest) -
+// permite adicionar, editar e remover links livres alem de Instagram/e-mail.
 function ExtraLinksEditor({
   links,
   onChange,
@@ -402,6 +434,7 @@ function ExtraLinksEditor({
   links: StoreLink[]
   onChange: (links: StoreLink[]) => void
 }) {
+  // Atualiza so o link com o id informado, mantendo os demais intactos.
   function updateLink(id: string, changes: Partial<StoreLink>) {
     onChange(links.map((link) => (link.id === id ? { ...link, ...changes } : link)))
   }
@@ -410,6 +443,7 @@ function ExtraLinksEditor({
     onChange(links.filter((link) => link.id !== id))
   }
 
+  // Adiciona um link vazio com um novo id - o admin preenche nome e url depois.
   function addLink() {
     onChange([...links, { id: createLinkId(), label: '', url: '' }])
   }
@@ -456,6 +490,9 @@ function ExtraLinksEditor({
   )
 }
 
+// Cartao de preview ao vivo no topo do painel: mostra nome da loja, um
+// botao, uma tag de destaque e os textos de sucesso/erro com as cores e
+// fontes atuais do tema, sem precisar salvar nem recarregar a pagina.
 function PreviewCard({ theme }: { theme: StoreTheme }) {
   return (
     <div

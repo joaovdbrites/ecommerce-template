@@ -30,11 +30,15 @@ const (
 func SeedDemoCustomer(db *pgxpool.Pool) error {
 	ctx := context.Background()
 
+	// Hash da senha fixa de teste, gerado a cada boot (bcrypt usa um salt
+	// novo toda vez, entao o hash muda mesmo a senha sendo sempre a mesma).
 	hash, err := bcrypt.GenerateFromPassword([]byte(demoCustomerPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
 
+	// Cria o cliente de teste ou atualiza os dados dele se ja existir,
+	// sempre devolvendo o id para usar no endereco logo abaixo.
 	var customerID string
 	err = db.QueryRow(ctx, `
 		INSERT INTO customers (name, email, phone, cpf, password_hash)
@@ -51,6 +55,8 @@ func SeedDemoCustomer(db *pgxpool.Pool) error {
 		return err
 	}
 
+	// So cria o endereco padrao se o cliente ainda nao tiver nenhum, para nao
+	// duplicar endereco a cada reinicio do servidor.
 	if _, err := db.Exec(ctx, `
 		INSERT INTO addresses (customer_id, label, cep, street, number, neighborhood, city, state, is_default)
 		SELECT $1, 'Principal', '79044-480', 'Rua Doutor Fauze Saueia', '100', 'Jardim Los Angeles', 'CAMPO GRANDE', 'MS', true

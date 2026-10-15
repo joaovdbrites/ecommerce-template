@@ -5,14 +5,20 @@ import { SiteModuleRenderer } from '../components/site/SiteModuleRenderer'
 import { useOrganizerStore } from '../hooks/useOrganizerStore'
 import { getOrganizerPageModules, isOrganizerNodeAvailable, isOrganizerPreviewMode } from '../types/organizer'
 
+// Pagina generica criada pelo lojista no Organizador (rota /pagina/:slug),
+// tipo "Sobre nós" ou "Perguntas frequentes" — renderiza os modulos que
+// foram montados para essa pagina especifica.
 export function ManagedPage() {
   const { slug = '' } = useParams()
   const location = useLocation()
   const { store } = useOrganizerStore()
+  // Modo preview do Organizador: mostra a pagina mesmo se ainda nao publicada
   const previewMode = isOrganizerPreviewMode(location.search)
   const route = `/pagina/${slug}`
   const page = store.nodes.find((node) => node.type === 'page' && node.route === route)
 
+  // Slug sem pagina correspondente (ou pagina ainda nao disponivel fora do
+  // preview) cai nesse estado de "nao encontrada" em vez de quebrar a tela
   if (!page || !isOrganizerNodeAvailable(page, previewMode)) {
     return (
       <section className="surface-panel mx-auto max-w-2xl p-8 text-center">
@@ -25,6 +31,7 @@ export function ManagedPage() {
     )
   }
 
+  // So entram os modulos disponiveis e com conteudo renderizavel de verdade
   const modules = getOrganizerPageModules(store.nodes, page.id).filter(
     (node) =>
       isOrganizerNodeAvailable(node, previewMode) &&
@@ -42,6 +49,8 @@ export function ManagedPage() {
         ) : null}
       </header>
 
+      {/* Pagina existe mas ainda nao tem modulos publicados: mostra um aviso
+          em vez de deixar a area de conteudo vazia */}
       {modules.length === 0 ? (
         <div className="rounded-[24px] border border-dashed border-[#ddc7ea] bg-white/60 p-10 text-center text-sm text-[#6b665f]">
           Esta página foi criada. Adicione e publique módulos pelo organizador.

@@ -24,12 +24,16 @@ function ScrollToTop() {
   return null
 }
 
+// Roteador principal da loja: define todas as rotas publicas e onde cada
+// pagina entra no layout (com ou sem header/footer da loja).
 export function AppRouter() {
   return (
     <BrowserRouter>
       <ScrollToTop />
       <Routes>
+        {/* Painel administrativo (Organizador) fica fora do MainLayout, tem chrome proprio */}
         <Route path="/admin" element={<OrganizerPage />} />
+        {/* Todo o resto da loja usa o MainLayout (header, nav mobile, footer etc) */}
         <Route element={<MainLayout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/categoria-a" element={<CategoryPage />} />
@@ -41,10 +45,12 @@ export function AppRouter() {
           <Route path="/pedidos" element={<OrdersPage />} />
           <Route path="/pedidos/:id" element={<OrderDetailPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
+          {/* Login e cadastro reusam o mesmo componente, so trocando o modo */}
           <Route path="/login" element={<CustomerAuthPage mode="login" />} />
           <Route path="/cadastro" element={<CustomerAuthPage mode="register" />} />
           <Route path="/redefinir-senha" element={<PasswordResetPage />} />
           <Route path="/conta" element={<AccountPage />} />
+          {/* Qualquer rota desconhecida volta pra home em vez de mostrar 404 */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

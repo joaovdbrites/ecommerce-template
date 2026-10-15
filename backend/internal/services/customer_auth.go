@@ -24,8 +24,10 @@ type FieldConflictError struct {
 	Message string
 }
 
+// Error satisfaz a interface error devolvendo so a mensagem amigavel.
 func (e *FieldConflictError) Error() string { return e.Message }
 
+// Erros de login com Google e padroes de validacao usados em todo o arquivo.
 var (
 	ErrGoogleNotConfigured = errors.New("login com Google ainda nao configurado nesta loja")
 	ErrGoogleInvalidToken  = errors.New("nao foi possivel validar sua conta Google")
@@ -34,6 +36,7 @@ var (
 	nonDigitsOnly = regexp.MustCompile(`[^0-9]`)
 )
 
+// customerTokenTTL e a validade do JWT de sessao do cliente/admin.
 const customerTokenTTL = 72 * time.Hour
 
 // CustomerRegistrationPayload e a ficha de cadastro completa: dados pessoais,
@@ -55,22 +58,31 @@ type CustomerRegistrationPayload struct {
 	State           string `json:"state"`
 }
 
+// digitsOnly remove tudo que nao for digito (usado para normalizar CPF e telefone).
 func digitsOnly(value string) string {
 	return nonDigitsOnly.ReplaceAllString(value, "")
 }
 
+// normalizeEmail poe em minusculas e tira espaco das pontas, para comparacoes
+// e buscas no banco serem sempre consistentes.
 func normalizeEmail(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
+// isValidCPF confere o formato (11 digitos, nao todos iguais) e os dois
+// digitos verificadores pelo algoritmo oficial da Receita Federal.
 func isValidCPF(cpf string) bool {
 	digits := digitsOnly(cpf)
 	if len(digits) != 11 {
 		return false
 	}
+	// CPFs com todos os digitos iguais (ex: 111.111.111-11) passam na conta
+	// mas nunca sao validos de verdade.
 	if strings.Count(digits, string(digits[0])) == 11 {
 		return false
 	}
+	// Calcula os dois digitos verificadores (posicoes 9 e 10) e compara com
+	// o que foi informado.
 	for position := 9; position <= 10; position++ {
 		sum := 0
 		for index := 0; index < position; index++ {
@@ -84,6 +96,8 @@ func isValidCPF(cpf string) bool {
 	return true
 }
 
+// maskEmail esconde parte do usuario do e-mail (ex: "jo***@site.com") para
+// mostrar na tela de login sem expor o endereco completo de quem ja tem conta.
 func maskEmail(email string) string {
 	at := strings.Index(email, "@")
 	if at <= 0 {
@@ -106,6 +120,7 @@ func customerRole(isAdmin bool) string {
 	return "customer"
 }
 
+// firstName extrai so o primeiro nome (usado em saudacoes de e-mail/tela).
 func firstName(name string) string {
 	parts := strings.Fields(name)
 	if len(parts) == 0 {
@@ -122,6 +137,8 @@ func (s *Service) IdentifyCustomer(ctx context.Context, identifier string) (map[
 		return nil, &FieldConflictError{Field: "identifier", Message: "informe seu e-mail ou CPF"}
 	}
 
+	// Decide se o identificador e e-mail ou CPF pela presenca de "@", e
+	// valida o formato de acordo.
 	kind := "email"
 	if !strings.Contains(identifier, "@") {
 		kind = "cpf"
@@ -147,6 +164,8 @@ func (s *Service) IdentifyCustomer(ctx context.Context, identifier string) (map[
 		   OR ($2 <> '' AND regexp_replace(COALESCE(cpf, ''), '[^0-9]', '', 'g') = $2)
 		LIMIT 1`, emailKey, cpfKey).Scan(&id, &name, &email, &passwordHash, &googleSub)
 
+	// Conta nao encontrada: devolve "exists: false" em vez de erro, para o
+	// front oferecer o cadastro.
 	if errors.Is(err, pgx.ErrNoRows) {
 		return map[string]interface{}{
 			"exists":         false,
@@ -159,6 +178,8 @@ func (s *Service) IdentifyCustomer(ctx context.Context, identifier string) (map[
 		return nil, err
 	}
 
+	// Conta existe: informa quais metodos de login estao disponiveis para
+	// o front decidir se mostra campo de senha, botao do Google, ou ambos.
 	return map[string]interface{}{
 		"exists":         true,
 		"identifierType": kind,
@@ -200,6 +221,8 @@ func (s *Service) CustomerLoginIdentifier(ctx context.Context, identifier, passw
 		return "", err
 	}
 
+	// Freio de forca bruta: se a conta esta trancada por excesso de senhas
+	// erradas, nem chega a comparar a senha enviada agora.
 	if locked := loginLockRemaining(id); locked > 0 {
 		minutes := int(locked.Minutes()) + 1
 		return "", &FieldConflictError{
@@ -208,6 +231,8 @@ func (s *Service) CustomerLoginIdentifier(ctx context.Context, identifier, passw
 		}
 	}
 
+	// Conta sem senha cadastrada: so pode ter entrado pelo Google, entao
+	// orienta a usar o botao certo em vez de um erro generico de senha.
 	if hash == "" {
 		if googleSub != "" {
 			return "", &FieldConflictError{
@@ -218,6 +243,8 @@ func (s *Service) CustomerLoginIdentifier(ctx context.Context, identifier, passw
 		return "", ErrInvalidCredentials
 	}
 
+	// Senha errada: conta como falha para o freio de login antes de
+	// devolver o erro generico (nao revela se foi usuario ou senha).
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
 		recordLoginFailure(id)
 		return "", ErrInvalidCredentials
@@ -232,6 +259,8 @@ func (s *Service) CustomerLoginIdentifier(ctx context.Context, identifier, passw
 func (s *Service) CustomerFieldConflicts(ctx context.Context, email, cpf, phone, excludeID string) ([]map[string]string, error) {
 	conflicts := []map[string]string{}
 
+	// Cada entrada descreve um campo unico a conferir: a condicao SQL e a
+	// mensagem de erro caso ja exista outro cliente com esse valor.
 	checks := []struct {
 		field   string
 		value   string
@@ -243,6 +272,8 @@ func (s *Service) CustomerFieldConflicts(ctx context.Context, email, cpf, phone,
 		{"phone", digitsOnly(phone), `regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = $1`, "este telefone ja esta cadastrado"},
 	}
 
+	// Roda cada checagem; campo vazio (nao informado) e pulado. excludeID
+	// (via $2) impede que o proprio registro conte como conflito consigo mesmo.
 	for _, check := range checks {
 		if check.value == "" {
 			continue
@@ -260,6 +291,9 @@ func (s *Service) CustomerFieldConflicts(ctx context.Context, email, cpf, phone,
 	return conflicts, nil
 }
 
+// validateRegistration confere, campo a campo, a ficha de cadastro/edicao de
+// perfil. requirePassword e false quando o cliente ja tem senha (ex: so esta
+// completando endereco) e so exige senha nova se uma foi de fato enviada.
 func validateRegistration(payload CustomerRegistrationPayload, requirePassword bool) error {
 	if strings.TrimSpace(payload.Name) == "" {
 		return &FieldConflictError{Field: "name", Message: "informe seu nome completo"}
@@ -311,6 +345,8 @@ func validateRegistration(payload CustomerRegistrationPayload, requirePassword b
 func (s *Service) RegisterCustomer(ctx context.Context, customerID string, payload CustomerRegistrationPayload) (map[string]interface{}, error) {
 	existingHasPassword := false
 	existingIsAdmin := false
+	// Se customerID veio preenchido, e uma edicao/complemento de cadastro
+	// ja existente (fluxo do Google) - busca se ja tem senha e se e admin.
 	if customerID != "" {
 		var hash string
 		err := s.db.QueryRow(ctx, `SELECT COALESCE(password_hash, ''), is_admin FROM customers WHERE id = $1`, customerID).Scan(&hash, &existingIsAdmin)
@@ -327,6 +363,7 @@ func (s *Service) RegisterCustomer(ctx context.Context, customerID string, paylo
 		return nil, err
 	}
 
+	// Confere duplicidade de e-mail/CPF/telefone antes de gravar qualquer coisa.
 	conflicts, err := s.CustomerFieldConflicts(ctx, payload.Email, payload.CPF, payload.Phone, customerID)
 	if err != nil {
 		return nil, err
@@ -344,6 +381,7 @@ func (s *Service) RegisterCustomer(ctx context.Context, customerID string, paylo
 	email := normalizeEmail(payload.Email)
 	name := strings.TrimSpace(payload.Name)
 
+	// Sem customerID: e cadastro novo, cria a linha ja com a senha com hash.
 	if customerID == "" {
 		hash, hashErr := bcrypt.GenerateFromPassword([]byte(payload.Password), bcrypt.DefaultCost)
 		if hashErr != nil {
@@ -356,6 +394,8 @@ func (s *Service) RegisterCustomer(ctx context.Context, customerID string, paylo
 			return nil, err
 		}
 	} else {
+		// Com customerID: atualiza os dados pessoais do cadastro existente e,
+		// se uma senha nova foi enviada, atualiza ela tambem (opcional aqui).
 		if _, err := tx.Exec(ctx, `UPDATE customers SET name = $1, email = $2, phone = $3, cpf = $4 WHERE id = $5`,
 			name, email, payload.Phone, payload.CPF, customerID); err != nil {
 			return nil, err
@@ -371,6 +411,7 @@ func (s *Service) RegisterCustomer(ctx context.Context, customerID string, paylo
 		}
 	}
 
+	// Grava/atualiza o endereco na mesma transacao do cadastro.
 	if _, err := s.ensureAddress(ctx, tx, customerID, payload.CEP, payload.Street, payload.Number, payload.Neighborhood, payload.City, payload.State); err != nil {
 		return nil, err
 	}
@@ -387,6 +428,8 @@ func (s *Service) RegisterCustomer(ctx context.Context, customerID string, paylo
 	return map[string]interface{}{"token": token, "needsProfile": false}, nil
 }
 
+// googleTokenInfo e o subconjunto da resposta do endpoint tokeninfo do
+// Google que interessa para autenticar e preencher o cadastro inicial.
 type googleTokenInfo struct {
 	Sub           string `json:"sub"`
 	Aud           string `json:"aud"`
@@ -398,6 +441,9 @@ type googleTokenInfo struct {
 	Picture       string `json:"picture"`
 }
 
+// verifyGoogleCredential valida o id_token do Google chamando o endpoint
+// oficial de tokeninfo (em vez de so decodificar o JWT localmente) e confere
+// se o "aud" bate com o client ID configurado desta loja e o e-mail e verificado.
 func (s *Service) verifyGoogleCredential(ctx context.Context, credential string) (*googleTokenInfo, error) {
 	endpoint := "https://oauth2.googleapis.com/tokeninfo?id_token=" + url.QueryEscape(credential)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -420,6 +466,8 @@ func (s *Service) verifyGoogleCredential(ctx context.Context, credential string)
 	if err := json.NewDecoder(response.Body).Decode(&info); err != nil {
 		return nil, ErrGoogleInvalidToken
 	}
+	// aud precisa ser exatamente o client ID desta loja - senao e um token
+	// valido do Google mas emitido para outra aplicacao.
 	if info.Sub == "" || info.Aud != s.resolveGoogleClientID(ctx) {
 		return nil, ErrGoogleInvalidToken
 	}
@@ -452,6 +500,9 @@ func (s *Service) GoogleSignIn(ctx context.Context, credential string) (map[stri
 		name = strings.TrimSpace(info.GivenName + " " + info.FamilyName)
 	}
 
+	// Busca por google_sub (ja logou com Google antes) ou por e-mail (tem
+	// cadastro feito por senha e esta logando com Google pela primeira vez);
+	// o ORDER BY prioriza o match por google_sub quando os dois existirem.
 	var customerID, storedPhone, storedCPF string
 	var isAdmin bool
 	err = s.db.QueryRow(ctx, `
@@ -462,6 +513,8 @@ func (s *Service) GoogleSignIn(ctx context.Context, credential string) (map[stri
 		LIMIT 1`, info.Sub, email).Scan(&customerID, &storedPhone, &storedCPF, &isAdmin)
 
 	switch {
+	// Cliente novo: cria o cadastro so com o que o Google entregou (telefone
+	// e CPF ficam em branco ate o cliente completar a ficha).
 	case errors.Is(err, pgx.ErrNoRows):
 		if insertErr := s.db.QueryRow(ctx, `
 			INSERT INTO customers (name, email, phone, cpf, password_hash, google_sub, avatar_url)
@@ -471,6 +524,9 @@ func (s *Service) GoogleSignIn(ctx context.Context, credential string) (map[stri
 		}
 	case err != nil:
 		return nil, err
+	// Cliente ja existia (por google_sub ou por e-mail): vincula o
+	// google_sub e preenche avatar/nome so se ainda estiverem vazios, sem
+	// sobrescrever o que o cliente ja tinha preenchido manualmente.
 	default:
 		if _, updateErr := s.db.Exec(ctx, `
 			UPDATE customers
@@ -482,6 +538,8 @@ func (s *Service) GoogleSignIn(ctx context.Context, credential string) (map[stri
 		}
 	}
 
+	// Confere se ja tem endereco cadastrado para decidir se o front precisa
+	// abrir a tela de completar perfil.
 	var hasAddress bool
 	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM addresses WHERE customer_id = $1)`, customerID).Scan(&hasAddress); err != nil {
 		return nil, err
@@ -492,6 +550,8 @@ func (s *Service) GoogleSignIn(ctx context.Context, credential string) (map[stri
 		return nil, err
 	}
 
+	// Falta telefone, CPF ou endereco: cadastro incompleto, front deve pedir
+	// esses dados antes de liberar checkout.
 	needsProfile := storedPhone == "" || storedCPF == "" || !hasAddress
 
 	return map[string]interface{}{

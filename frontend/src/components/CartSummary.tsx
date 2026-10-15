@@ -2,6 +2,8 @@ import { useCurrency } from '../hooks/useCurrency'
 
 const INSTALLMENTS = 12
 
+// Bloco de resumo do pedido (subtotal, desconto, frete e total) usado no
+// carrinho e no checkout. `compact` troca o cartao grande por um mais simples.
 export function CartSummary({
   subtotal,
   discount = 0,
@@ -49,6 +51,7 @@ export function CartSummary({
   )
 }
 
+// Linha "label: valor" do resumo; `highlight` destaca o valor em verde (usado no desconto).
 function SummaryRow({
   label,
   value,

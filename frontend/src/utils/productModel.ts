@@ -21,8 +21,16 @@ export function productToItemCardContent(product: Product): ItemCardContent {
   }
 }
 
+// Converte um item do Organizador (formato enxuto do card) de volta para o
+// formato Product completo, preenchendo com valores neutros os campos que o
+// Organizador nao tem (categoria, margem, estoque minimo etc.) - e o que
+// permite reusar componentes de carrinho/checkout escritos para o catalogo
+// real tambem com produtos vindos do Organizador.
 export function itemCardToProduct(item: ItemCardContent): Product {
   const price = item.price || 0
+  // Itens sem campo de estoque preenchido sao tratados como "sempre
+  // disponiveis" (999 unidades fakes) em vez de forcar um controle de
+  // estoque que o lojista nao configurou para aquele item.
   const hasStockTracking = item.stock !== undefined
   return {
     id: item.id,

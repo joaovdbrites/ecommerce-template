@@ -10,6 +10,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// JWT exige um token Bearer valido cujo claim Scope bata com o esperado
+// (hoje so "customer" e usado) e disponibiliza userID/role no contexto para
+// os handlers seguintes lerem sem reanalisar o token.
 func JWT(cfg config.Config, scope string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")

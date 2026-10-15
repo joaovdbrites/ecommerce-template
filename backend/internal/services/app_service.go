@@ -24,16 +24,26 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Service concentra toda a regra de negocio do backend (pedidos, clientes,
+// frete, pagamentos, configuracoes) em cima de uma conexao com o banco e do
+// cliente de e-mail. E instanciado uma vez em NewService e injetado nos
+// handlers HTTP.
 type Service struct {
 	cfg    config.Config
 	db     *pgxpool.Pool
 	mailer *mailer.Mailer
 }
 
+// ErrInvalidCredentials e o erro generico de login (nunca diz se foi o
+// usuario ou a senha que errou, para nao ajudar quem esta tentando adivinhar).
 var ErrInvalidCredentials = errors.New("e-mail ou senha invalidos")
 
+// organizerStoreSettingKey e a chave em settings onde fica salvo o JSON
+// inteiro da vitrine do Organizador (pastas, itens, tags).
 const organizerStoreSettingKey = "organizer_store"
 
+// shippingRule espelha uma linha da tabela shipping_rules: cada regra define
+// como calcular (ou zerar) o frete para um tipo de entrega.
 type shippingRule struct {
 	Code         string
 	Name         string
@@ -45,11 +55,16 @@ type shippingRule struct {
 	RegionPrefix string
 }
 
+// CheckoutItem e um item do carrinho enviado pelo navegador no fechamento do
+// pedido (so id e quantidade - preco nunca vem do cliente, ver CreateOrder).
 type CheckoutItem struct {
 	ProductID string `json:"productId"`
 	Quantity  int    `json:"quantity"`
 }
 
+// CheckoutInput e o payload completo enviado pelo front ao finalizar a
+// compra: dados do cliente, endereco, itens do carrinho e informacoes de
+// pagamento (cartao/pix via Mercado Pago).
 type CheckoutInput struct {
 	CustomerID      string         `json:"customerId"`
 	CustomerName    string         `json:"customerName"`
@@ -76,6 +91,8 @@ type CheckoutInput struct {
 	PublicBaseURL string `json:"-"`
 }
 
+// CustomerProfilePayload e o conjunto de dados pessoais editaveis na tela de
+// perfil do cliente.
 type CustomerProfilePayload struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
@@ -83,6 +100,8 @@ type CustomerProfilePayload struct {
 	CPF   string `json:"cpf"`
 }
 
+// CustomerAddressPayload e um endereco de entrega enviado pelo cliente, seja
+// para criar um novo (AddressID vazio) ou atualizar um existente.
 type CustomerAddressPayload struct {
 	AddressID    string `json:"addressId"`
 	AddressLabel string `json:"addressLabel"`
@@ -95,6 +114,8 @@ type CustomerAddressPayload struct {
 	IsDefault    bool   `json:"isDefault"`
 }
 
+// NewService monta o Service com a configuracao da loja, o pool de conexoes
+// do banco e um cliente de e-mail configurado a partir dos dados de SMTP.
 func NewService(cfg config.Config, db *pgxpool.Pool) *Service {
 	svc := &Service{
 		cfg: cfg,
@@ -123,6 +144,8 @@ func (s *Service) resolvePaymentsProvider(ctx context.Context) payments.Provider
 	return payments.MockProvider{}
 }
 
+// GetOrganizerStore le o JSON bruto da vitrine do Organizador direto de
+// settings. Devolve nil sem erro quando ainda nao foi salvo nada (loja nova).
 func (s *Service) GetOrganizerStore(ctx context.Context) (json.RawMessage, error) {
 	var value string
 	err := s.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = $1`, organizerStoreSettingKey).Scan(&value)
@@ -138,6 +161,9 @@ func (s *Service) GetOrganizerStore(ctx context.Context) (json.RawMessage, error
 	return json.RawMessage(value), nil
 }
 
+// SaveOrganizerStore grava o JSON inteiro da vitrine do Organizador,
+// validando que e um JSON bem formado e que nao passa de um limite de
+// tamanho (protecao contra payload absurdo derrubar o banco).
 func (s *Service) SaveOrganizerStore(ctx context.Context, value json.RawMessage) (json.RawMessage, error) {
 	if len(value) == 0 || !json.Valid(value) {
 		return nil, errors.New("estado do organizador invalido")
@@ -158,6 +184,9 @@ func (s *Service) SaveOrganizerStore(ctx context.Context, value json.RawMessage)
 	return value, nil
 }
 
+// ValidateCoupon confere se o cupom existe e esta ativo, e calcula o
+// desconto resultante sobre o subtotal informado (usado na tela de carrinho,
+// antes de fechar o pedido de verdade).
 func (s *Service) ValidateCoupon(ctx context.Context, code string, subtotal float64) (map[string]interface{}, error) {
 	if code == "" {
 		return nil, errors.New("codigo do cupom obrigatorio")
@@ -168,6 +197,8 @@ func (s *Service) ValidateCoupon(ctx context.Context, code string, subtotal floa
 	if err != nil {
 		return nil, errors.New("cupom invalido ou inativo")
 	}
+	// Desconto percentual ou valor fixo, mas nunca passa do proprio subtotal
+	// (senao o pedido ficaria com total negativo).
 	discount := 0.0
 	if discountType == "percent" {
 		discount = subtotal * (value / 100)
@@ -187,6 +218,9 @@ func (s *Service) ValidateCoupon(ctx context.Context, code string, subtotal floa
 	}, nil
 }
 
+// StoreConfig monta o pacote de configuracao publica que o front carrega ao
+// abrir a loja: opcoes de frete disponiveis, chaves publicas de pagamento e
+// Google, WhatsApp de contato e o tema visual.
 func (s *Service) StoreConfig(ctx context.Context) (map[string]interface{}, error) {
 	rows, err := s.db.Query(ctx, `SELECT code, name, rule_type, amount, COALESCE(min_order_amount, 0), COALESCE(weight_min_grams, 0), COALESCE(weight_max_grams, 0), COALESCE(region_prefix, '') FROM shipping_rules WHERE is_active = true ORDER BY name`)
 	if err != nil {
@@ -200,6 +234,10 @@ func (s *Service) StoreConfig(ctx context.Context) (map[string]interface{}, erro
 	}
 	rules = normalizeShippingRules(rules)
 
+	// Monta a lista de opcoes de entrega para o seletor do checkout; regras
+	// de peso e frete-gratis nao aparecem como opcao propria (sao aplicadas
+	// automaticamente em cima da opcao escolhida). Correios e sempre
+	// oferecido, calculado a parte via QuoteShipping.
 	options := []map[string]string{}
 	for _, rule := range rules {
 		if rule.RuleType == "weight" || rule.RuleType == "free_over" {
@@ -234,6 +272,10 @@ func (s *Service) StoreConfig(ctx context.Context) (map[string]interface{}, erro
 	}, nil
 }
 
+// QuoteShipping calcula o valor do frete para um carrinho, combinando regras
+// fixas, por peso, retirada/local/manual e frete-gratis acima de um valor
+// minimo. E chamada tanto para mostrar a cotacao no carrinho quanto de novo
+// dentro de CreateOrder para conferir o valor final.
 func (s *Service) QuoteShipping(ctx context.Context, input shipping.QuoteInput) (shipping.QuoteOutput, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT code, name, rule_type, amount, COALESCE(min_order_amount, 0), COALESCE(weight_min_grams, 0), COALESCE(weight_max_grams, 0), COALESCE(region_prefix, '')
@@ -259,6 +301,8 @@ func (s *Service) QuoteShipping(ctx context.Context, input shipping.QuoteInput) 
 		return shipping.QuoteOutput{Amount: 0, Label: "Entrega em residencia - a combinar com o vendedor"}, nil
 	}
 
+	// Modos com valor fixo/combinado: devolve a regra correspondente direto,
+	// sem entrar na conta de peso/frete-gratis abaixo.
 	switch input.DeliveryMode {
 	case "pickup":
 		return findShippingRule(rules, "pickup")
@@ -268,12 +312,16 @@ func (s *Service) QuoteShipping(ctx context.Context, input shipping.QuoteInput) 
 		return findShippingRule(rules, "manual")
 	}
 
+	// Frete gratis quando o subtotal (ja com desconto de cupom aplicado)
+	// atinge o minimo configurado.
 	for _, current := range rules {
 		if current.RuleType == "free_over" && input.Subtotal >= current.MinOrder {
 			return shipping.QuoteOutput{Amount: 0, Label: current.Name}, nil
 		}
 	}
 
+	// Caso geral: soma uma taxa fixa com o adicional por faixa de peso, e
+	// aplica um valor especifico por prefixo de CEP quando configurado.
 	base := 0.0
 	label := "Frete calculado"
 	for _, current := range rules {
@@ -363,6 +411,10 @@ func (s *Service) CustomerProfile(ctx context.Context, customerID, requesterID s
 	}, nil
 }
 
+// CustomerOrder busca o detalhe completo de um pedido (totais, endereco de
+// entrega, itens) para a tela "Meus Pedidos" do cliente. O WHERE confere
+// customer_id junto com o id do pedido, entao um cliente nunca consegue ver
+// o pedido de outro so trocando o id na URL.
 func (s *Service) CustomerOrder(ctx context.Context, customerID, orderID string) (map[string]interface{}, error) {
 	var order struct {
 		ID            string
@@ -465,6 +517,8 @@ func (s *Service) CustomerOrder(ctx context.Context, customerID, orderID string)
 	}, nil
 }
 
+// UpdateCustomerProfile grava os dados pessoais editados na tela de perfil e
+// devolve a ficha atualizada (reaproveitando CustomerProfile).
 func (s *Service) UpdateCustomerProfile(ctx context.Context, customerID string, payload CustomerProfilePayload) (map[string]interface{}, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -486,6 +540,8 @@ func (s *Service) UpdateCustomerProfile(ctx context.Context, customerID string, 
 	return s.CustomerProfile(ctx, customerID, customerID)
 }
 
+// SaveCustomerAddress cria um endereco novo ou atualiza um existente
+// (dependendo de payload.AddressID) na ficha do cliente, na tela de perfil.
 func (s *Service) SaveCustomerAddress(ctx context.Context, customerID string, payload CustomerAddressPayload) (map[string]interface{}, error) {
 	if payload.CEP == "" || payload.Street == "" || payload.Number == "" || payload.Neighborhood == "" {
 		return nil, errors.New("preencha os campos obrigatorios do endereco")
@@ -497,12 +553,15 @@ func (s *Service) SaveCustomerAddress(ctx context.Context, customerID string, pa
 	}
 	defer tx.Rollback(ctx)
 
+	// Marcar este endereco como padrao tira o padrao de qualquer outro -
+	// so pode haver um endereco padrao por cliente.
 	if payload.IsDefault {
 		if _, err := tx.Exec(ctx, `UPDATE addresses SET is_default = false WHERE customer_id = $1`, customerID); err != nil {
 			return nil, err
 		}
 	}
 
+	// Com AddressID: atualiza o endereco existente.
 	if payload.AddressID != "" {
 		_, err = tx.Exec(ctx, `
 			UPDATE addresses
@@ -520,6 +579,8 @@ func (s *Service) SaveCustomerAddress(ctx context.Context, customerID string, pa
 			customerID,
 		)
 	} else {
+		// Sem AddressID: cria um endereco novo. Se o cliente ainda nao tem
+		// nenhum endereco padrao, este primeiro vira o padrao automaticamente.
 		var hasDefault bool
 		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM addresses WHERE customer_id = $1 AND is_default = true)`, customerID).Scan(&hasDefault); err != nil {
 			return nil, err
@@ -550,6 +611,8 @@ func (s *Service) SaveCustomerAddress(ctx context.Context, customerID string, pa
 	return s.CustomerProfile(ctx, customerID, customerID)
 }
 
+// SetDefaultCustomerAddress troca qual endereco do cliente e o padrao
+// (usado no checkout rapido e na tela de perfil).
 func (s *Service) SetDefaultCustomerAddress(ctx context.Context, customerID, addressID string) (map[string]interface{}, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -579,6 +642,10 @@ func (s *Service) SetDefaultCustomerAddress(ctx context.Context, customerID, add
 	return s.CustomerProfile(ctx, customerID, customerID)
 }
 
+// CreateOrder fecha um pedido do checkout publico: garante/atualiza o
+// cadastro do cliente, confere cada item direto no Organizador (nunca confia
+// em preco vindo do navegador), aplica cupom e frete, cobra no Mercado Pago
+// e so entao grava pedido, itens e pagamento numa unica transacao.
 func (s *Service) CreateOrder(ctx context.Context, input CheckoutInput) (map[string]interface{}, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -586,16 +653,22 @@ func (s *Service) CreateOrder(ctx context.Context, input CheckoutInput) (map[str
 	}
 	defer tx.Rollback(ctx)
 
+	// Cria o cliente (checkout de visitante) ou reaproveita/atualiza o
+	// cadastro existente.
 	customerID, err := s.ensureCustomer(ctx, tx, input.CustomerID, input.CustomerName, input.CustomerEmail, input.CustomerPhone, input.CustomerCPF, input.Password)
 	if err != nil {
 		return nil, err
 	}
 
+	// Mesma ideia para o endereco de entrega: reaproveita um endereco igual
+	// ja cadastrado ou cria um novo.
 	addressID, err := s.ensureAddress(ctx, tx, customerID, input.CEP, input.Street, input.Number, input.Neighborhood, input.City, input.State)
 	if err != nil {
 		return nil, err
 	}
 
+	// itemSummary acumula os dados ja resolvidos de cada item do pedido,
+	// prontos para gravar em order_items.
 	type itemSummary struct {
 		OrganizerItemID string
 		Name            string
@@ -630,6 +703,8 @@ func (s *Service) CreateOrder(ctx context.Context, input CheckoutInput) (map[str
 		})
 	}
 
+	// Recalcula o desconto do cupom no servidor (ignora silenciosamente
+	// cupom invalido/inativo em vez de travar o pedido por isso).
 	discount := 0.0
 	if input.CouponCode != "" {
 		var couponType string
@@ -644,6 +719,9 @@ func (s *Service) CreateOrder(ctx context.Context, input CheckoutInput) (map[str
 		}
 	}
 
+	// Correios tem preco calculado no front via API dos Correios - usa o
+	// valor que o cliente viu na tela. Os demais modos de entrega sao
+	// recalculados aqui (QuoteShipping), nunca confiando em valor do front.
 	var shippingAmount float64
 	if input.DeliveryMode == "correios" && input.CorreiosPrice > 0 {
 		shippingAmount = input.CorreiosPrice
@@ -665,6 +743,8 @@ func (s *Service) CreateOrder(ctx context.Context, input CheckoutInput) (map[str
 	if input.PaymentMethodID == "" {
 		return nil, errors.New("selecione uma forma de pagamento")
 	}
+	// Processa a cobranca de fato no Mercado Pago (ou no provedor mock, em
+	// dev) antes de gravar qualquer coisa como pedido confirmado.
 	paymentResult, err := s.resolvePaymentsProvider(ctx).CreatePayment(payments.DirectPaymentInput{
 		Total:           total,
 		Description:     fmt.Sprintf("Pedido (%d itens)", len(orderItems)),
@@ -684,6 +764,9 @@ func (s *Service) CreateOrder(ctx context.Context, input CheckoutInput) (map[str
 	orderStatus := mapPaymentToOrderStatus(paymentResult.Status)
 	origin := "online"
 
+	// Grava o pedido, os itens comprados e o registro do pagamento na mesma
+	// transacao - ou tudo entra junto, ou nada entra (evita pedido "orfao"
+	// sem itens se algo falhar no meio).
 	var orderID string
 	err = tx.QueryRow(ctx, `
 		INSERT INTO orders (customer_id, address_id, subtotal, shipping_amount, discount_amount, total_amount, payment_method, payment_status, order_status, origin, mp_preference_id, delivery_mode)
@@ -711,6 +794,9 @@ func (s *Service) CreateOrder(ctx context.Context, input CheckoutInput) (map[str
 		return nil, err
 	}
 
+	// So baixa estoque se o pagamento ja veio aprovado na hora (pix/boleto
+	// instantaneo, ou cartao aprovado na hora); pagamento que ainda vai ser
+	// confirmado depois baixa estoque so quando o webhook confirmar.
 	if orderStatus == "pago" {
 		s.updateStockForOrder(ctx, orderID)
 	}
@@ -804,7 +890,13 @@ func (s *Service) SetCustomerAdmin(ctx context.Context, customerID string, isAdm
 	return map[string]interface{}{"id": id, "name": name, "isAdmin": isAdmin}, nil
 }
 
+// ensureCustomer resolve quem e o cliente do pedido: com customerID
+// preenchido (cliente logado), atualiza a ficha dele; sem customerID
+// (checkout de visitante), reaproveita um cadastro com o mesmo e-mail ou
+// cria um cliente novo. Roda dentro da mesma transacao do pedido.
 func (s *Service) ensureCustomer(ctx context.Context, tx pgx.Tx, customerID, name, email, phone, cpf, password string) (string, error) {
+	// Cliente autenticado: so confirma que a conta existe, confere
+	// conflito de e-mail/CPF com outra conta e atualiza os dados.
 	if customerID != "" {
 		var id string
 		err := tx.QueryRow(ctx, `SELECT id::text FROM customers WHERE id = $1`, customerID).Scan(&id)
@@ -829,6 +921,8 @@ func (s *Service) ensureCustomer(ctx context.Context, tx pgx.Tx, customerID, nam
 		return id, updateErr
 	}
 
+	// Visitante: ja existe conta com este e-mail? Reaproveita (sem pedir
+	// senha - quem volta a comprar como visitante continua podendo).
 	var id string
 	err := tx.QueryRow(ctx, `SELECT id::text FROM customers WHERE email = $1`, email).Scan(&id)
 	if err == nil {
@@ -838,6 +932,7 @@ func (s *Service) ensureCustomer(ctx context.Context, tx pgx.Tx, customerID, nam
 	if err != pgx.ErrNoRows {
 		return "", err
 	}
+	// E-mail inedito: cria conta nova, essa sim exigindo senha.
 	if password == "" {
 		return "", errors.New("senha obrigatoria para novo cadastro")
 	}
@@ -851,6 +946,10 @@ func (s *Service) ensureCustomer(ctx context.Context, tx pgx.Tx, customerID, nam
 	return id, err
 }
 
+// ensureAddress reaproveita um endereco identico que o cliente ja tenha
+// cadastrado, ou cria um novo - evita duplicar o mesmo endereco a cada
+// compra. Cidade/estado tem default para Campo Grande/MS (praca principal da
+// loja) quando o checkout nao informa.
 func (s *Service) ensureAddress(ctx context.Context, tx pgx.Tx, customerID, cep, street, number, neighborhood, city, state string) (string, error) {
 	if city == "" {
 		city = "Campo Grande"
@@ -880,6 +979,8 @@ func (s *Service) ensureAddress(ctx context.Context, tx pgx.Tx, customerID, cep,
 		return "", err
 	}
 
+	// Nenhum endereco igual encontrado: cria um novo, virando padrao
+	// automaticamente se for o primeiro do cliente.
 	var hasDefault bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM addresses WHERE customer_id = $1 AND is_default = true)`, customerID).Scan(&hasDefault); err != nil {
 		return "", err
@@ -893,6 +994,9 @@ func (s *Service) ensureAddress(ctx context.Context, tx pgx.Tx, customerID, cep,
 	return id, err
 }
 
+// mapPaymentToOrderStatus traduz o status cru do provedor de pagamento para
+// o status de pedido usado internamente - qualquer coisa que nao seja
+// aprovado cai em "aguardando_pagamento".
 func mapPaymentToOrderStatus(paymentStatus string) string {
 	if paymentStatus == "paid" || paymentStatus == "approved" {
 		return "pago"
@@ -952,7 +1056,12 @@ func mpSignatureMatches(secret, signature, requestID, dataID string) bool {
 	return hmac.Equal([]byte(hex.EncodeToString(mac.Sum(nil))), []byte(hash))
 }
 
+// HandleMPWebhook processa a notificacao assincrona do Mercado Pago: releia
+// o pagamento direto na API deles (nunca confia no corpo da notificacao) e,
+// se foi aprovado, marca o pedido como pago e baixa estoque.
 func (s *Service) HandleMPWebhook(ctx context.Context, topic string, paymentID string) error {
+	// So processa notificacao de pagamento - outros topicos (merchant_order
+	// etc.) sao ignorados.
 	if topic != "payment" {
 		return nil
 	}
@@ -962,6 +1071,7 @@ func (s *Service) HandleMPWebhook(ctx context.Context, topic string, paymentID s
 		return fmt.Errorf("mercado pago nao configurado")
 	}
 
+	// Consulta o pagamento direto na API do Mercado Pago com o token da loja.
 	req, _ := http.NewRequest("GET", "https://api.mercadopago.com/v1/payments/"+paymentID, nil)
 	req.Header.Set("Authorization", "Bearer "+mpAccessToken)
 	resp, err := http.DefaultClient.Do(req)
@@ -989,6 +1099,8 @@ func (s *Service) HandleMPWebhook(ctx context.Context, topic string, paymentID s
 		return err
 	}
 
+	// So interessa processar quando o pagamento foi de fato aprovado -
+	// qualquer outro status (pendente, rejeitado, etc.) nao muda o pedido.
 	if payment.Status != "approved" {
 		return nil
 	}
@@ -1021,12 +1133,17 @@ func (s *Service) HandleMPWebhook(ctx context.Context, topic string, paymentID s
 	return nil
 }
 
+// updateStockForOrder le os itens de um pedido e baixa o estoque deles no
+// Organizador. Chamada tanto no checkout com pagamento ja aprovado na hora
+// quanto no webhook quando a aprovacao vem depois.
 func (s *Service) updateStockForOrder(ctx context.Context, orderID string) {
 	rows, err := s.db.Query(ctx, `SELECT organizer_item_id, quantity FROM order_items WHERE order_id = $1`, orderID)
 	if err != nil {
 		return
 	}
 
+	// Soma a quantidade por item do Organizador (um pedido pode ter mais de
+	// uma linha do mesmo item, embora raro).
 	organizerDecrements := map[string]int{}
 	for rows.Next() {
 		var organizerItemID *string
@@ -1047,6 +1164,9 @@ func (s *Service) updateStockForOrder(ctx context.Context, orderID string) {
 // ao administrador fixo - ver IsFixedAdmin).
 var apiSettingKeys = []string{"mp_access_token", "mp_public_key", "mp_webhook_secret", "google_client_id"}
 
+// GetAPISettings le as chaves sensiveis da gaveta "API" (tokens do Mercado
+// Pago, segredo do webhook, client id do Google), preenchendo com "" o que
+// ainda nao foi configurado.
 func (s *Service) GetAPISettings(ctx context.Context) (map[string]string, error) {
 	rows, err := s.db.Query(ctx, `SELECT key, value FROM settings WHERE key = ANY($1)`, apiSettingKeys)
 	if err != nil {
@@ -1070,11 +1190,14 @@ func (s *Service) GetAPISettings(ctx context.Context) (map[string]string, error)
 	return settings, nil
 }
 
+// SaveSetting grava (ou atualiza) um par chave/valor generico na tabela
+// settings - usada por todas as "gavetas" de configuracao (API, tema, etc).
 func (s *Service) SaveSetting(ctx context.Context, key, value string) error {
 	_, err := s.db.Exec(ctx, `INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2`, key, value)
 	return err
 }
 
+// GetSetting le o valor de uma chave de settings.
 func (s *Service) GetSetting(ctx context.Context, key string) (string, error) {
 	var value string
 	err := s.db.QueryRow(ctx, `SELECT value FROM settings WHERE key = $1`, key).Scan(&value)
@@ -1099,6 +1222,9 @@ func (s *Service) resolveGoogleClientID(ctx context.Context) string {
 	return s.cfg.GoogleClientID
 }
 
+// findShippingRule procura a regra de um tipo (ou codigo) especifico entre
+// as regras ativas - usada pelos modos de entrega que tem valor fixo
+// (retirada, local, manual).
 func findShippingRule(rules []shippingRule, ruleType string) (shipping.QuoteOutput, error) {
 	for _, current := range rules {
 		if current.RuleType == ruleType || current.Code == ruleType {
@@ -1108,6 +1234,8 @@ func findShippingRule(rules []shippingRule, ruleType string) (shipping.QuoteOutp
 	return shipping.QuoteOutput{}, fmt.Errorf("regra de frete %s nao encontrada", ruleType)
 }
 
+// OrderFilter sao os filtros de busca da tela de Pedidos do admin, com
+// paginacao.
 type OrderFilter struct {
 	Search    string `json:"search"`
 	Status    string `json:"status"`
@@ -1118,6 +1246,9 @@ type OrderFilter struct {
 	Limit     int    `json:"limit"`
 }
 
+// Orders lista pedidos para a tela de administracao, combinando pedidos
+// online (orders) e vendas de balcao (pos_sales) num unico resultado
+// paginado e filtravel por busca, status, pagamento e intervalo de datas.
 func (s *Service) Orders(ctx context.Context, filter OrderFilter) (map[string]interface{}, error) {
 	if filter.Limit <= 0 {
 		filter.Limit = 50
@@ -1127,6 +1258,7 @@ func (s *Service) Orders(ctx context.Context, filter OrderFilter) (map[string]in
 	}
 	offset := (filter.Page - 1) * filter.Limit
 
+	// Monta o WHERE dinamicamente so com os filtros que vieram preenchidos.
 	where := []string{}
 	args := []interface{}{}
 	argIndex := 1
@@ -1163,6 +1295,8 @@ func (s *Service) Orders(ctx context.Context, filter OrderFilter) (map[string]in
 		whereClause = "WHERE " + strings.Join(where, " AND ")
 	}
 
+	// UNION ALL junta pedidos online e vendas de balcao numa mesma "tabela"
+	// virtual, para a busca/paginacao enxergar as duas origens juntas.
 	countSQL := `SELECT COUNT(*) FROM (
 		SELECT o.id, c.name as customer_name, o.total_amount, o.payment_status, o.order_status, o.created_at, COALESCE(o.origin, 'online') as origin
 		FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
@@ -1252,6 +1386,8 @@ func (s *Service) AdminOrderNotifications(ctx context.Context, limit int) ([]map
 	return notifications, rows.Err()
 }
 
+// AdminUnreadOrderCount conta pedidos pagos ainda nao marcados como lidos -
+// o numero do badge de notificacoes do admin.
 func (s *Service) AdminUnreadOrderCount(ctx context.Context) (int, error) {
 	var count int
 	err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM orders WHERE admin_read_at IS NULL AND order_status = 'pago'`).Scan(&count)
@@ -1330,7 +1466,14 @@ func (s *Service) MarkOrderNotificationRead(ctx context.Context, orderID string)
 }
 
 
+// UpdateOrderStatus avanca o pedido para o proximo status do fluxo
+// (pago -> enviado -> entregue). A troca so e aceita se o pedido estiver
+// exatamente no status anterior esperado e ja pago - isso impede pular
+// etapa (ex: marcar "entregue" direto sem passar por "enviado") ou reverter
+// o fluxo.
 func (s *Service) UpdateOrderStatus(ctx context.Context, orderID, newStatus string) error {
+	// Mapa de "status pedido -> status anterior exigido" descreve as
+	// unicas transicoes permitidas.
 	validStatuses := map[string]string{
 		"pago":     "aguardando_pagamento",
 		"enviado":  "pago",
@@ -1351,6 +1494,7 @@ func (s *Service) UpdateOrderStatus(ctx context.Context, orderID, newStatus stri
 	return nil
 }
 
+// ListCoupons lista todos os cupons cadastrados para a tela de admin.
 func (s *Service) ListCoupons(ctx context.Context) ([]map[string]interface{}, error) {
 	rows, err := s.db.Query(ctx, `SELECT id::text, code, discount_type, value, is_active FROM coupons ORDER BY code`)
 	if err != nil {
@@ -1370,6 +1514,9 @@ func (s *Service) ListCoupons(ctx context.Context) ([]map[string]interface{}, er
 	return coupons, rows.Err()
 }
 
+// SaveCoupon cria um cupom novo (id vazio) ou atualiza um existente. O
+// codigo e sempre normalizado para maiusculas, igual na hora de validar no
+// checkout.
 func (s *Service) SaveCoupon(ctx context.Context, id, code, discountType string, value float64, isActive bool) (map[string]interface{}, error) {
 	if code == "" || discountType == "" {
 		return nil, errors.New("codigo e tipo obrigatorios")
@@ -1387,12 +1534,15 @@ func (s *Service) SaveCoupon(ctx context.Context, id, code, discountType string,
 	return map[string]interface{}{"id": id, "code": code, "discountType": discountType, "value": value, "isActive": isActive}, nil
 }
 
+// DeleteCoupon apaga um cupom definitivamente.
 func (s *Service) DeleteCoupon(ctx context.Context, id string) error {
 	_, err := s.db.Exec(ctx, `DELETE FROM coupons WHERE id = $1`, id)
 	return err
 }
 
 
+// ExportOrdersCSV gera um CSV simples com todos os pedidos, para o admin
+// baixar e abrir em planilha.
 func (s *Service) ExportOrdersCSV(ctx context.Context) ([]byte, error) {
 	rows, err := s.db.Query(ctx, `SELECT o.id::text, COALESCE(c.name, 'Consumidor Final'), o.total_amount, o.payment_status, o.order_status, o.origin, o.created_at FROM orders o LEFT JOIN customers c ON c.id = o.customer_id ORDER BY o.created_at DESC`)
 	if err != nil {
@@ -1414,6 +1564,9 @@ func (s *Service) ExportOrdersCSV(ctx context.Context) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// GetOrderPublic devolve o acompanhamento publico de um pedido (tela "status
+// do pedido" acessivel so pelo id, sem exigir login) com uma linha do tempo
+// simplificada de etapas.
 func (s *Service) GetOrderPublic(ctx context.Context, orderID string) (map[string]interface{}, error) {
 	var order struct {
 		ID            string
@@ -1447,6 +1600,8 @@ func (s *Service) GetOrderPublic(ctx context.Context, orderID string) (map[strin
 		items = append(items, map[string]interface{}{"name": name, "price": price, "quantity": qty, "imageUrl": imageURL})
 	}
 
+	// Traduz o order_status (um unico valor) numa lista de etapas
+	// concluidas/pendentes para o front desenhar a barra de progresso.
 	statuses := []map[string]interface{}{
 		{"label": "Pedido confirmado", "done": true},
 		{"label": "Pagamento aprovado", "done": order.OrderStatus != "aguardando_pagamento"},
@@ -1459,6 +1614,8 @@ func (s *Service) GetOrderPublic(ctx context.Context, orderID string) (map[strin
 	}, nil
 }
 
+// scanShippingRules le todas as linhas de uma query de shipping_rules para
+// a struct shippingRule.
 func scanShippingRules(rows pgx.Rows) ([]shippingRule, error) {
 	rules := []shippingRule{}
 	for rows.Next() {
@@ -1471,6 +1628,10 @@ func scanShippingRules(rows pgx.Rows) ([]shippingRule, error) {
 	return rules, rows.Err()
 }
 
+// normalizeShippingRules garante no maximo uma regra por tipo (fixed,
+// free_over, pickup, local, manual), preferindo a que tem o codigo canonico
+// quando ha duplicatas cadastradas por engano no admin. Regras de peso nao
+// sao deduplicadas: varias faixas de peso coexistem de proposito.
 func normalizeShippingRules(rules []shippingRule) []shippingRule {
 	canonical := map[string]string{
 		"fixed":     "fixed",
@@ -1488,6 +1649,8 @@ func normalizeShippingRules(rules []shippingRule) []shippingRule {
 			continue
 		}
 
+		// Entre regras do mesmo tipo, fica com a que tem o codigo canonico
+		// ou que mais se parece com ele.
 		current, exists := selected[rule.RuleType]
 		preferredCode := canonical[rule.RuleType]
 		if !exists || rule.Code == preferredCode || (current.Code != preferredCode && strings.Contains(rule.Code, preferredCode)) {
@@ -1495,6 +1658,7 @@ func normalizeShippingRules(rules []shippingRule) []shippingRule {
 		}
 	}
 
+	// Devolve numa ordem fixa e previsivel, com as faixas de peso no final.
 	normalized := make([]shippingRule, 0, len(selected)+len(weightRules))
 	for _, key := range []string{"fixed", "free_over", "pickup", "local", "manual"} {
 		if rule, exists := selected[key]; exists {
@@ -1505,6 +1669,8 @@ func normalizeShippingRules(rules []shippingRule) []shippingRule {
 	return normalized
 }
 
+// defaultString devolve fallback quando value esta vazio (ou so com
+// espacos).
 func defaultString(value, fallback string) string {
 	if strings.TrimSpace(value) == "" {
 		return fallback

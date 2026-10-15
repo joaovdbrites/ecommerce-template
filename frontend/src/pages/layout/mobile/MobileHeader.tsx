@@ -33,6 +33,8 @@ import {
 } from '../../../types/organizer'
 import { Carousel } from '../../../components/Carousel'
 
+// Listas estaticas de itens exibidos no menu gaveta (drawer) do mobile,
+// separadas em secoes: atalhos, conta e descoberta de produtos.
 const shortcutLinks: { label: string; icon: LucideIcon }[] = [
   { label: 'Cupons', icon: Tag },
   { label: 'Mais vendido', icon: ShoppingBag },
@@ -53,6 +55,8 @@ const discoveryLinks: { label: string; icon: LucideIcon }[] = [
   { label: 'Acabaram de chegar', icon: Zap },
 ]
 
+// Linha simples de icone + texto, usada pra renderizar cada item das listas
+// acima dentro do drawer mobile.
 function DrawerRow({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
   return (
     <div className="flex items-center gap-3 text-[#fafaf8]">
@@ -62,6 +66,8 @@ function DrawerRow({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
   )
 }
 
+// Header da versao mobile: barra superior com menu/logo/busca/whatsapp,
+// linha de atalhos de categoria, e o drawer lateral de navegacao/conta.
 export function MobileHeader() {
   const [open, setOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
@@ -77,9 +83,13 @@ export function MobileHeader() {
     token,
   )
   const [notificationsOpen, setNotificationsOpen] = useState(false)
+  // Modo preview do Organizador: mantem esse parametro propagado nos links
+  // internos pra nao perder o preview ao navegar pelo header
   const previewMode = isOrganizerPreviewMode(location.search)
   const homePath = withOrganizerPreview('/', previewMode)
   const currentPath = location.pathname.length > 1 ? location.pathname.replace(/\/+$/, '') : '/'
+  // Monta os links de categoria/pagina a partir das paginas cadastradas no
+  // Organizador, excluindo a home e a pagina atual, respeitando o preview.
   const categoryLinks = store.nodes
     .filter(
       (node) =>
@@ -104,11 +114,14 @@ export function MobileHeader() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
+  // Marca o body quando o drawer esta aberto (provavelmente usado em CSS
+  // global pra travar o scroll da pagina de fundo).
   useEffect(() => {
     document.body.classList.toggle('drawer-open', open)
     return () => document.body.classList.remove('drawer-open')
   }, [open])
 
+  // Busca ainda nao filtra de verdade: so limpa o campo e manda pra home
   const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSearchTerm('')
@@ -129,6 +142,8 @@ export function MobileHeader() {
             </button>
           </div>
 
+          {/* Logo e campo de busca ocupam o mesmo espaco: um fade/translada
+              pro lugar do outro conforme rola a pagina (scrolled) */}
           <div className="relative flex h-9 items-center justify-center overflow-hidden">
             <Link
               to={homePath}
@@ -199,6 +214,8 @@ export function MobileHeader() {
           </div>
         </div>
 
+        {/* Barra de busca "expandida" + atalhos de categoria: encolhe quando
+            a pagina rola ou o drawer abre, pra nao competir com eles */}
         <div
           className={[
             'overflow-hidden transition-all duration-300 ease-in-out',
@@ -225,6 +242,7 @@ export function MobileHeader() {
               </button>
             </form>
 
+            {/* Carrossel horizontal com as paginas/categorias cadastradas no Organizador */}
             <nav aria-label="Categorias" className="mt-3">
               <Carousel
                 ariaLabel="Categorias de produtos"
@@ -245,6 +263,8 @@ export function MobileHeader() {
           </div>
         </div>
 
+        {/* Drawer lateral de navegacao: cobre a tela toda abaixo do header,
+            so fica visivel (opacity-100) quando `open` esta ativo */}
         <div
           className={[
             'fixed inset-x-0 top-[61px] bottom-0 z-20 border-t border-[color:var(--color-primary-dark)]/40 bg-[linear-gradient(160deg,var(--color-primary)_0%,var(--color-primary-dark)_100%)] transition-opacity duration-300 ease-in-out',
@@ -253,6 +273,8 @@ export function MobileHeader() {
         >
           <div className="h-full overflow-y-auto px-4 pb-24 pt-5">
             <>
+              {/* Primeira linha do drawer: leva pra conta se ja estiver
+                  logado, ou abre o modal de autenticacao senao */}
               <button
                 type="button"
                 onClick={() => {
@@ -283,6 +305,7 @@ export function MobileHeader() {
                 {accountLinks.map((item) => (
                   <DrawerRow key={item.label} {...item} />
                 ))}
+                {/* Item de notificacoes só aparece pra admin, com badge de nao lidas */}
                 {isAdmin ? (
                   <button
                     type="button"
@@ -310,6 +333,8 @@ export function MobileHeader() {
                 ))}
               </div>
 
+              {/* Botoes de entrar/cadastro no rodape do drawer, sempre visiveis
+                  independente do estado de login (reforcam o CTA) */}
               <div className="mt-[5px] flex flex-col items-center gap-3">
                 <button
                   type="button"
@@ -337,8 +362,10 @@ export function MobileHeader() {
         </div>
       </header>
 
+      {/* Overlay invisivel pra fechar o drawer ao clicar fora dele */}
       {open ? <div aria-hidden="true" onClick={() => setOpen(false)} className="fixed inset-0 z-20" /> : null}
 
+      {/* Gaveta lateral com a lista de notificacoes, só montada pra admin */}
       {isAdmin ? (
         <NotificationsDrawer
           open={notificationsOpen}

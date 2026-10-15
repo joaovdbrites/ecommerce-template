@@ -12,12 +12,16 @@ const (
 	loginLockWindow  = 15 * time.Minute
 )
 
+// loginAttempt acompanha o estado de tentativas de login de uma chave
+// (tipicamente email/identificador da conta).
 type loginAttempt struct {
 	failures    int
 	lockedUntil time.Time
 	lastSeen    time.Time
 }
 
+// Estado em memoria do freio de login: protegido por mutex porque e
+// acessado por goroutines concorrentes de requisicoes HTTP diferentes.
 var (
 	loginAttemptsMu sync.Mutex
 	loginAttempts   = map[string]*loginAttempt{}
@@ -39,12 +43,17 @@ func loginLockRemaining(key string) time.Duration {
 	return 0
 }
 
+// recordLoginFailure soma mais uma falha de login para a chave. Se a janela
+// anterior ja expirou, comeca a contagem do zero; ao atingir o limite,
+// tranca a chave por loginLockWindow e zera o contador de falhas.
 func recordLoginFailure(key string) {
 	loginAttemptsMu.Lock()
 	defer loginAttemptsMu.Unlock()
 
 	entry := loginAttempts[key]
 	now := time.Now()
+	// Sem registro anterior, ou janela de contagem ja expirada: comeca
+	// uma entrada nova em vez de herdar falhas antigas.
 	if entry == nil || now.Sub(entry.lastSeen) > loginLockWindow {
 		entry = &loginAttempt{}
 		loginAttempts[key] = entry
@@ -57,6 +66,8 @@ func recordLoginFailure(key string) {
 	}
 }
 
+// clearLoginAttempts apaga o historico de falhas da chave (chamado apos um
+// login bem-sucedido, para nao carregar falhas antigas para a proxima vez).
 func clearLoginAttempts(key string) {
 	loginAttemptsMu.Lock()
 	defer loginAttemptsMu.Unlock()

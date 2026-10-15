@@ -92,8 +92,12 @@ func optionalCustomerID(cfg config.Config, c *gin.Context) string {
 	return claims.UserID
 }
 
+// respond padroniza a resposta HTTP de quase todas as rotas: erro conhecido
+// vira o status apropriado (401/409/400), erro generico vira 400, e sucesso
+// sempre volta como {"data": ...} com 200.
 func respond(c *gin.Context, data interface{}, err error) {
 	if err != nil {
+		// Credenciais invalidas sempre viram 401, nao importa a rota.
 		if errors.Is(err, services.ErrInvalidCredentials) {
 			c.JSON(http.StatusUnauthorized, gin.H{"message": err.Error()})
 			return
@@ -111,6 +115,9 @@ func respond(c *gin.Context, data interface{}, err error) {
 	c.JSON(http.StatusOK, gin.H{"data": data})
 }
 
+// cors libera chamadas vindas do dominio do front-end (FRONTEND_URL) e
+// responde de pronto o preflight OPTIONS que o navegador manda antes de
+// requisicoes com corpo/cabecalhos customizados.
 func cors(frontendURL string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if frontendURL != "" {

@@ -24,16 +24,22 @@ type organizerCheckoutNode struct {
 	TagIds   []string `json:"tagIds"`
 }
 
+// organizerCheckoutTag representa uma tag/categoria do Organizador que pode
+// carregar um desconto percentual aplicavel aos itens marcados com ela.
 type organizerCheckoutTag struct {
 	ID              string   `json:"id"`
 	DiscountPercent *float64 `json:"discountPercent"`
 }
 
+// organizerCheckoutStore e o formato minimo do JSON armazenado em
+// settings["organizer_store"] que o checkout precisa ler.
 type organizerCheckoutStore struct {
 	Nodes []organizerCheckoutNode `json:"nodes"`
 	Tags  []organizerCheckoutTag  `json:"tags"`
 }
 
+// organizerItemSummary e o resultado ja resolvido (preco final com desconto
+// aplicado, peso estimado) que o checkout usa para montar o pedido.
 type organizerItemSummary struct {
 	ID        string
 	Name      string
@@ -61,6 +67,8 @@ func (s *Service) resolveOrganizerCheckoutItem(ctx context.Context, itemID strin
 		return nil, err
 	}
 
+	// Procura o item pelo id entre os nos do tipo "item" (o Organizador tem
+	// outros tipos de no, como pastas, que nao sao compraveis).
 	var node *organizerCheckoutNode
 	for i := range store.Nodes {
 		if store.Nodes[i].ID == itemID && store.Nodes[i].Type == "item" {
@@ -71,6 +79,7 @@ func (s *Service) resolveOrganizerCheckoutItem(ctx context.Context, itemID strin
 	if node == nil {
 		return nil, fmt.Errorf("item nao encontrado")
 	}
+	// So deixa comprar o que esta visivel para o cliente no site.
 	if node.Status != "published" && node.Status != "low-stock" {
 		return nil, fmt.Errorf("%s nao esta disponivel para compra no momento", node.Name)
 	}
@@ -78,6 +87,8 @@ func (s *Service) resolveOrganizerCheckoutItem(ctx context.Context, itemID strin
 		return nil, fmt.Errorf("estoque insuficiente para %s", node.Name)
 	}
 
+	// Aplica o maior desconto entre as tags do item (descontos nao se
+	// acumulam, so vale o melhor).
 	bestDiscount := 0.0
 	for _, tagID := range node.TagIds {
 		for _, tag := range store.Tags {
@@ -129,11 +140,16 @@ func (s *Service) decrementOrganizerStock(ctx context.Context, decrements map[st
 	}
 	defer tx.Rollback(ctx)
 
+	// Trava a linha do JSON do Organizador para a duracao da transacao (ver
+	// comentario da funcao sobre a disputa com o PUT /organizer do admin).
 	var raw string
 	if err := tx.QueryRow(ctx, `SELECT value FROM settings WHERE key = $1 FOR UPDATE`, organizerStoreSettingKey).Scan(&raw); err != nil {
 		return
 	}
 
+	// Usa map[string]interface{} (em vez do struct organizerCheckoutNode) de
+	// proposito: preserva todo campo que o checkout nao conhece ao
+	// re-serializar o JSON de volta.
 	var store map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &store); err != nil {
 		return
@@ -143,6 +159,8 @@ func (s *Service) decrementOrganizerStock(ctx context.Context, decrements map[st
 		return
 	}
 
+	// Para cada no que corresponde a um item do pedido, desconta a
+	// quantidade comprada do estoque e marca como "coming-soon" quando zera.
 	changed := false
 	for i, node := range nodes {
 		id, _ := node["id"].(string)
@@ -169,6 +187,7 @@ func (s *Service) decrementOrganizerStock(ctx context.Context, decrements map[st
 		return
 	}
 
+	// Reserializa nodes dentro do objeto original e grava de volta.
 	nodesJSON, err := json.Marshal(nodes)
 	if err != nil {
 		return

@@ -97,6 +97,8 @@ function isDesktopViewport() {
   return typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
 }
 
+// Formata datas (criacao de item, ultimo acesso, atividades do historico)
+// no padrao curto pt-BR - cai num texto generico quando nao ha data.
 const formatDate = (value?: string) => {
   if (!value) return 'Sem data definida'
   return new Intl.DateTimeFormat('pt-BR', {
@@ -105,6 +107,9 @@ const formatDate = (value?: string) => {
   }).format(new Date(value))
 }
 
+// Escolhe o icone representativo de cada tipo de no (pagina, pasta,
+// carrossel, catalogo, destaque ou item generico) para usar nas listas da
+// gaveta e no conteudo central.
 const nodeIcon = (type: OrganizerContentType, size = 17) => {
   if (type === 'page') return <FileText size={size} />
   if (type === 'folder') return <FolderOpen size={size} />
@@ -138,8 +143,17 @@ function drawerDescendants(
     ])
 }
 
+// Tela principal do "Organizador" (admin/CMS da loja): comanda a arvore de
+// paginas/pastas/itens com drag-and-drop, as tags, o assistente de criacao de
+// item, a gaveta de Configuracoes (incluindo o editor de Aparencia/tema), a
+// lixeira, o historico de atividades e a gestao de administradores. Todo o
+// estado de navegacao (selecao atual, gavetas abertas, modais, buscas) vive
+// aqui e e repassado para os subcomponentes definidos mais abaixo neste
+// mesmo arquivo.
 export function OrganizerPage() {
   const { isCustomer, isAdmin, token, logout } = useAuth()
+  // Fonte de verdade da arvore de conteudo (nos, tags, lixeira, atividades) e
+  // das acoes que a modificam - persistida pelo hook, nao e estado local.
   const {
     store,
     createNode,
@@ -155,44 +169,92 @@ export function OrganizerPage() {
     deleteTrashPermanently,
     clearActivities,
   } = useOrganizerStore(token ?? undefined)
+  // Notificacoes administrativas (sino no cabecalho) - contagem de nao lidas,
+  // lista e acoes de carregar/marcar como lida.
   const { unread, notifications, loading, loadNotifications, markRead } = useAdminNotifications(
     isAdmin,
     token,
   )
 
+  // Controla se a gaveta esquerda (arvore de paginas/itens/tags) esta aberta -
+  // comeca aberta apenas em telas desktop (ver isDesktopViewport acima).
   const [leftOpen, setLeftOpen] = useState(isDesktopViewport)
+  // Controla se a gaveta direita (propriedades do item/pagina selecionado)
+  // esta aberta - mesma regra de breakpoint da esquerda.
   const [rightOpen, setRightOpen] = useState(isDesktopViewport)
+  // Largura atual (em px) da gaveta direita, ajustavel por arraste do
+  // usuario via handleResizeStart.
   const [rightWidth, setRightWidth] = useState(250)
+  // true enquanto o usuario esta arrastando a borda da gaveta direita para
+  // redimensiona-la (usado para aplicar estilos/cursor durante o arraste).
   const [rightResizing, setRightResizing] = useState(false)
+  // Texto digitado na busca da gaveta esquerda - filtra todas as secoes.
   const [searchQuery, setSearchQuery] = useState('')
+  // O que esta selecionado no momento: um no (pagina/pasta/item) ou uma tag.
+  // Comeca com a pagina "home" selecionada.
   const [selection, setSelection] = useState<Selection>({ kind: 'node', id: 'home' })
+  // Id do item que deve ganhar destaque/scroll automatico no conteudo central
+  // (ex.: logo apos criar um item novo).
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null)
+  // Controla qual modal de criacao/edicao do OrganizerModal esta aberto
+  // (criar pagina, criar pasta, escolher modulo, etc.) - null = nenhum.
   const [modalMode, setModalMode] = useState<OrganizerModalMode | null>(null)
+  // Id do no (carrossel/catalogo/destaque) cujo detalhe esta aberto no
+  // conteudo central, distinto da selecao da arvore.
   const [detailNodeId, setDetailNodeId] = useState<string | null>(null)
+  // Controla o menu suspenso do perfil (Modo visitante, Configuracoes,
+  // Lixeira, Historico, Sair) no rodape da gaveta esquerda.
   const [profileOpen, setProfileOpen] = useState(false)
+  // Controla a gaveta/painel de notificacoes administrativas.
   const [notificationsOpen, setNotificationsOpen] = useState(false)
+  // Controla se o painel de Configuracoes (SettingsPanel) esta aberto no
+  // lugar do conteudo central.
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Controla o modal da Lixeira (TrashModal).
   const [trashOpen, setTrashOpen] = useState(false)
+  // Controla o modal de Historico de atividades.
   const [historyOpen, setHistoryOpen] = useState(false)
+  // Controla o modal de gestao de Clientes.
   const [customersOpen, setCustomersOpen] = useState(false)
+  // Rascunho em edicao do assistente de criacao de item (ItemWizard) -
+  // null quando o assistente esta fechado.
   const [wizardDraft, setWizardDraft] = useState<ItemWizardDraft | null>(null)
+  // Passo atual dentro do assistente de criacao de item.
   const [wizardStep, setWizardStep] = useState<ItemWizardStep>(1)
+  // Quando preenchido, a tela entra em "Modo visitante": mostra o site como
+  // um cliente veria, guardando nome e rota da pagina pre-visualizada.
   const [visitorPreview, setVisitorPreview] = useState<{ name: string; route: string } | null>(null)
+  // Mensagem do toast/aviso temporario exibido apos acoes (ex.: "Item criado
+  // com sucesso") - some sozinha via showNotice.
   const [notice, setNotice] = useState('')
+  // Quais secoes da gaveta esquerda (Recentes, Pasta Pagina, Itens, Tags)
+  // estao expandidas ou recolhidas.
   const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
     recent: true,
     organization: true,
     items: true,
     tags: true,
   })
+  // Quais paginas/pastas-raiz da gaveta esquerda estao expandidas mostrando
+  // seus filhos (chave = id da pagina/pasta).
   const [openPages, setOpenPages] = useState<Record<string, boolean>>({})
+  // Referencia ao container principal da tela, usado para medir a largura
+  // disponivel durante o redimensionamento da gaveta direita.
   const shellRef = useRef<HTMLDivElement>(null)
 
+  // Resolve o objeto de no atualmente selecionado a partir do id guardado em
+  // `selection` (ou null se a selecao for uma tag ou nao existir mais).
   const selectedNode =
     selection?.kind === 'node' ? (store.nodes.find((node) => node.id === selection.id) ?? null) : null
+  // Resolve o no cujo detalhe esta aberto no conteudo central (independente
+  // da selecao da arvore).
   const detailNode = detailNodeId ? (store.nodes.find((node) => node.id === detailNodeId) ?? null) : null
+  // Resolve a tag atualmente selecionada, quando a selecao for do tipo tag.
   const selectedTag =
     selection?.kind === 'tag' ? (store.tags.find((tag) => tag.id === selection.id) ?? null) : null
+  // Pasta/pagina "alvo" para novas criacoes: se o no selecionado ja e um
+  // container (pagina/pasta) usa ele mesmo, senao usa o pai do item
+  // selecionado (ou "home" como fallback).
   const selectedContainerId =
     selectedNode?.type === 'page' || selectedNode?.type === 'folder'
       ? selectedNode.id
@@ -200,6 +262,8 @@ export function OrganizerPage() {
 
   // "Itens" tem secao propria na gaveta (mesma hierarquia de "Pasta Pagina"),
   // entao nao entra mais nessa lista de paginas do site.
+  // Lista memoizada das paginas do site (exceto a pasta "itens") junto com
+  // seus descendentes, para preencher a secao "Pasta Pagina" da gaveta.
   const organizationItems = useMemo<DrawerItem[]>(() => {
     const pages = store.nodes.filter((node) => node.type === 'page' && node.id !== 'itens')
     return pages.flatMap((page) => [
@@ -216,6 +280,8 @@ export function OrganizerPage() {
     ])
   }, [store.nodes])
 
+  // Lista memoizada das subpastas dentro de "Itens" com seus descendentes,
+  // para preencher a secao "Itens" da gaveta.
   const itemsSectionItems = useMemo<DrawerItem[]>(() => {
     const subfolders = store.nodes.filter((node) => node.type === 'folder' && node.parentId === 'itens')
     return subfolders.flatMap((folder) => [
@@ -232,6 +298,8 @@ export function OrganizerPage() {
     ])
   }, [store.nodes])
 
+  // Junta as 4 secoes da gaveta esquerda (Recentes, Pasta Pagina, Itens,
+  // Tags) num unico mapa, antes de aplicar o filtro de busca.
   const allSections = useMemo<Record<SectionKey, DrawerItem[]>>(
     () => ({
       recent: store.activities.slice(0, 7).map((activity) => ({
@@ -254,6 +322,9 @@ export function OrganizerPage() {
     [organizationItems, itemsSectionItems, store.activities, store.nodes, store.tags],
   )
 
+  // Aplica `searchQuery` sobre `allSections`. Nas secoes de 2 niveis
+  // ("Pasta Pagina" e "Itens") um filho que combina com a busca tambem
+  // mantem seu pai visivel, e um pai que combina mantem todos os filhos.
   const filteredSections = useMemo(() => {
     const query = normalizeOrganizerSearch(searchQuery)
     if (!query) return allSections
@@ -291,11 +362,15 @@ export function OrganizerPage() {
     ) as Record<SectionKey, DrawerItem[]>
   }, [allSections, searchQuery])
 
+  // Exibe uma mensagem de aviso temporaria (toast) e a esconde sozinha
+  // depois de 2.8s.
   const showNotice = (message: string) => {
     setNotice(message)
     window.setTimeout(() => setNotice(''), 2800)
   }
 
+  // Verifica, no momento da chamada, se a tela esta no breakpoint mobile
+  // (abaixo de "lg") - usado para decidir se as gavetas devem fechar sozinhas.
   const isMobileViewport = () => window.matchMedia('(max-width: 1023px)').matches
 
   // No mobile a gaveta esquerda cobre a tela inteira; paineis que abrem no
@@ -309,6 +384,8 @@ export function OrganizerPage() {
     }
   }
 
+  // Abre/fecha a gaveta esquerda - no mobile, abrir uma fecha a outra porque
+  // as duas ocupam a tela inteira em overlay.
   const toggleLeftDrawer = () => {
     setLeftOpen((value) => {
       const next = !value
@@ -317,6 +394,7 @@ export function OrganizerPage() {
     })
   }
 
+  // Abre/fecha a gaveta direita - mesma regra de exclusividade no mobile.
   const toggleRightDrawer = () => {
     setRightOpen((value) => {
       const next = !value
@@ -325,6 +403,9 @@ export function OrganizerPage() {
     })
   }
 
+  // Lida com o clique num item da gaveta esquerda: fecha paineis abertos,
+  // seleciona o no ou tag correspondente, registra o acesso (para a secao
+  // "Recentes") e fecha as gavetas se estiver no mobile.
   const selectItem = (item: DrawerItem) => {
     closeOpenSession()
     if (item.kind === 'tag') {
@@ -347,6 +428,10 @@ export function OrganizerPage() {
     }
   }
 
+  // Inicia o arraste de redimensionamento da gaveta direita: captura o
+  // ponteiro no handle, calcula a nova largura a cada pointermove (limitada
+  // entre MIN/MAX_RIGHT_WIDTH e 70% da largura do shell) e limpa os
+  // listeners/estado ao soltar o ponteiro.
   const handleResizeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault()
     const shell = shellRef.current
@@ -381,6 +466,9 @@ export function OrganizerPage() {
     window.addEventListener('pointercancel', handleEnd)
   }
 
+  // Abre o assistente de criacao de item (ItemWizard) para a pasta/pagina
+  // informada, ja pre-preenchendo os blocos de posicionamento padrao da
+  // pasta (quando ela tiver essa opcao habilitada).
   const openItemWizard = (parentId: string) => {
     const folder = store.nodes.find((node) => node.id === parentId)
     const defaultPlacementIds =
@@ -389,11 +477,15 @@ export function OrganizerPage() {
     setWizardStep(1)
   }
 
+  // Fecha o assistente de criacao de item descartando o rascunho atual.
   const closeItemWizard = () => {
     setWizardDraft(null)
     setWizardStep(1)
   }
 
+  // Fecha qualquer painel/modal "de sessao" que esteja aberto (Configuracoes,
+  // Lixeira, Historico, Clientes, Modo visitante, foco de item, assistente) -
+  // chamado antes de abrir outro painel para garantir que so um fique ativo.
   const closeOpenSession = () => {
     setSettingsOpen(false)
     setTrashOpen(false)
@@ -404,6 +496,10 @@ export function OrganizerPage() {
     closeItemWizard()
   }
 
+  // Confirma a criacao do item a partir do rascunho do assistente: calcula o
+  // status inicial (vira "Em breve" automaticamente se o estoque informado
+  // for zero), cria o no, associa-o aos blocos de posicionamento escolhidos,
+  // fecha o assistente e seleciona/realca o item recem-criado.
   const finishItemWizard = () => {
     if (!wizardDraft || !wizardDraft.name.trim()) return
     const trackingStock = wizardDraft.stock.trim() !== ''
@@ -438,17 +534,22 @@ export function OrganizerPage() {
     showNotice('Item criado com sucesso.')
   }
 
+  // Desloga o administrador e manda de volta para a home publica.
   const handleLogoff = () => {
     logout()
     window.location.href = '/'
   }
 
+  // Atalho usado pelo SettingsPanel para sair das Configuracoes e abrir
+  // direto uma tag especifica na selecao/arvore principal.
   const openTagFromSettings = (tagId: string) => {
     setSelection({ kind: 'tag', id: tagId })
     recordAccess(tagId, store.tags.find((tag) => tag.id === tagId)?.name ?? 'Tag')
     setSettingsOpen(false)
   }
 
+  // Ao clicar numa entrada do Historico, navega ate o no alvo (se ainda
+  // existir) e fecha o modal de historico.
   const openActivityFromHistory = (targetId: string | null) => {
     if (!targetId) return
     const targetNode = store.nodes.find((node) => node.id === targetId)
@@ -463,6 +564,9 @@ export function OrganizerPage() {
     setHistoryOpen(false)
   }
 
+  // Callback do OrganizerModal quando um no ou tag e criado: seleciona o
+  // novo item e, se estava no fluxo de criar pagina, avanca automaticamente
+  // para a escolha do primeiro modulo; sempre mostra um aviso de sucesso.
   const handleCreated = (kind: 'node' | 'tag', id: string) => {
     setSelection({ kind, id })
     if (modalMode === 'page') setModalMode('module-picker')
@@ -475,6 +579,8 @@ export function OrganizerPage() {
     )
   }
 
+  // Configuracao estatica das duas secoes "de criacao" da gaveta esquerda
+  // (Pasta Pagina e Itens): rotulo, mensagem de vazio e acao do botao "+".
   const sectionConfig: Array<{
     key: SectionKey
     label: string
@@ -498,6 +604,9 @@ export function OrganizerPage() {
     },
   ]
 
+  // Abre o modal generico de criacao/edicao para o modo pedido - exceto
+  // quando o modo e "item", que usa o assistente dedicado (ItemWizard) em
+  // vez do OrganizerModal.
   const handleOpenModal = (mode: OrganizerModalMode) => {
     if (mode === 'item') {
       openItemWizard(selectedContainerId)
@@ -506,6 +615,10 @@ export function OrganizerPage() {
     setModalMode(mode)
   }
 
+  // Monta o elemento do conteudo central (Workspace) uma unica vez, com
+  // todos os callbacks de navegacao/selecao/exclusao ja ligados ao estado
+  // local - reaproveitado tanto na renderizacao normal quanto, mais abaixo,
+  // atras do Modo visitante.
   const workspaceElement = (
     <Workspace
       selectedNode={selectedNode}
@@ -539,13 +652,20 @@ export function OrganizerPage() {
     />
   )
 
+  // Apenas tags com desconto configurado aparecem como opcao rapida de
+  // desconto dentro do assistente de criacao de item.
   const wizardDiscountTags = store.tags.filter((tag) => (tag.discountPercent ?? 0) > 0)
+  // A gaveta direita so aparece quando esta aberta E nao ha Configuracoes
+  // nem assistente de item ocupando a tela (eles tomam o lugar dela).
   const rightDrawerVisible = rightOpen && !settingsOpen && !wizardDraft
 
+  // Sem sessao de cliente valida, manda para o login.
   if (!isCustomer) {
     return <Navigate to="/login" replace />
   }
 
+  // Cliente logado mas sem permissao de administrador: mostra tela de
+  // acesso restrito em vez do organizador.
   if (!isAdmin) {
     return (
       <main className="organizer-font flex h-dvh w-full items-center justify-center bg-[var(--color-organizer-bg)] p-6 text-[#2a0f3d]">
@@ -569,6 +689,8 @@ export function OrganizerPage() {
         ref={shellRef}
         className="flex h-full w-full min-h-0 flex-col overflow-hidden bg-[var(--color-organizer-bg)]"
       >
+        {/* Cabecalho fixo: botao de abrir/fechar gaveta esquerda, marca
+            "Admin" e botao de abrir/fechar gaveta direita. */}
         <header className="flex h-14 shrink-0 items-center justify-between bg-[linear-gradient(160deg,#5b247f_0%,#3a164f_100%)] px-3 shadow-[var(--shadow-organizer)] sm:px-4">
           <DrawerToggle drawer="left" open={leftOpen} onToggle={toggleLeftDrawer} />
           <div className="flex items-center gap-2 text-[#f5ca74]">
@@ -583,6 +705,8 @@ export function OrganizerPage() {
         </header>
 
         <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          {/* Gaveta esquerda: busca + secoes (Recentes, Pasta Pagina, Itens,
+              Tags) com a arvore de navegacao, e o menu de perfil no rodape. */}
           <aside
             aria-label="Gaveta de organização"
             className={`absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden bg-[#fdfbf7] shadow-2xl transition-[width,opacity] duration-300 lg:relative lg:inset-auto lg:z-auto lg:shrink-0 lg:shadow-none ${leftOpen ? 'w-full opacity-100 lg:w-[250px]' : 'pointer-events-none w-0 opacity-0'}`}
@@ -610,6 +734,9 @@ export function OrganizerPage() {
                 )}
               </label>
 
+              {/* Lista as secoes "Pasta Pagina" e "Itens", cada uma com
+                  cabecalho recolhivel, botao de adicionar e a lista (ja
+                  filtrada pela busca) de paginas/pastas e seus filhos. */}
               <nav className="mt-3" aria-label="Seções do organizador">
                 {sectionConfig.map((section) => {
                   const items = filteredSections[section.key]
@@ -747,6 +874,9 @@ export function OrganizerPage() {
               </nav>
             </div>
 
+            {/* Rodape da gaveta esquerda: menu de perfil (Modo visitante,
+                Configuracoes, Lixeira, Historico, Sair) por cima do botao
+                de perfil. */}
             <div className="relative flex h-16 w-full shrink-0 items-center gap-1 border-t border-stone-200/70 bg-[var(--color-organizer-bg)] px-3 sm:px-5 lg:w-[250px] lg:px-3">
               <div
                 aria-hidden={!profileOpen}
@@ -851,6 +981,9 @@ export function OrganizerPage() {
             </div>
           </aside>
 
+          {/* Coluna central: mostra, nessa ordem de prioridade, a previa do
+              Modo visitante, o assistente de criacao de item, o painel de
+              Configuracoes, ou o conteudo normal (Workspace). */}
           <section className="min-w-0 flex-1 bg-[var(--color-organizer-bg)] lg:p-3">
             <div
               className={`organizer-container h-full bg-[var(--color-organizer-bg)] lg:rounded-2xl lg:border lg:border-stone-200/80 lg:shadow-[var(--shadow-float)] ${visitorPreview ? 'overflow-hidden' : 'overflow-y-auto'}`}
@@ -903,6 +1036,9 @@ export function OrganizerPage() {
             </div>
           )}
 
+          {/* Gaveta direita (versao desktop, redimensionavel): mostra o
+              Workspace quando em Modo visitante, senao o Inspector do
+              no/tag selecionado. */}
           <aside
             aria-label="Gaveta de propriedades"
             style={{ width: rightDrawerVisible ? rightWidth : 0 }}
@@ -946,6 +1082,8 @@ export function OrganizerPage() {
             </div>
           </aside>
 
+          {/* Gaveta direita (versao mobile, overlay em tela cheia) - mesmo
+              conteudo da versao desktop, sem o redimensionamento. */}
           <aside
             aria-label="Gaveta de propriedades"
             className={`absolute inset-y-0 right-0 z-30 flex flex-col overflow-hidden bg-[var(--color-organizer-bg)] shadow-2xl transition-[width,opacity] duration-300 lg:hidden ${rightDrawerVisible ? 'w-full opacity-100' : 'pointer-events-none w-0 opacity-0'}`}
@@ -991,6 +1129,10 @@ export function OrganizerPage() {
         </div>
       )}
 
+      {/* Modais/gavetas de nivel superior, renderizados por cima de tudo
+          quando seu respectivo estado esta ativo: criacao/edicao generica,
+          detalhe de uso de um no, lixeira, historico, clientes e
+          notificacoes. */}
       {modalMode && (
         <OrganizerModal
           mode={modalMode}
@@ -1044,6 +1186,8 @@ interface VisitorPreviewProps {
   route: string
 }
 
+// Renderiza o site publico dentro de um iframe, usado pelo "Modo visitante"
+// para o admin ver a loja como um cliente veria, sem sair do Organizador.
 function VisitorPreview({ name, route }: VisitorPreviewProps) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
@@ -1060,6 +1204,9 @@ function VisitorPreview({ name, route }: VisitorPreviewProps) {
   )
 }
 
+// Painel de Configuracoes exibido no lugar do conteudo central: agrupa os
+// topicos Geral, Ferramentas (tags), API, Contas (gestao de admins) e
+// Aparencia (editor de tema), cada um delegado a um subcomponente proprio.
 function SettingsPanel({
   store,
   token,
@@ -1096,6 +1243,8 @@ function SettingsPanel({
           <X size={18} />
         </button>
       </div>
+      {/* Lista de topicos de configuracao, um abaixo do outro, cada um
+          dentro de um SettingsTopic recolhivel. */}
       <div className="space-y-6">
         <SettingsTopic title="Geral">
           <div className="organizer-surface p-4">
@@ -1174,11 +1323,17 @@ function SettingsPanel({
 // Numero de WhatsApp da loja: ao contrario da gaveta "API" abaixo, qualquer
 // admin pode ver e editar - nao e um dado sensivel como tokens de pagamento.
 export function StoreWhatsappSettings({ token }: { token: string | null }) {
+  // Numero de WhatsApp atualmente salvo (ou em edicao no campo).
   const [value, setValue] = useState('')
+  // true enquanto busca o valor salvo no backend ao montar o componente.
   const [loading, setLoading] = useState(true)
+  // true enquanto a chamada de salvar esta em andamento (desabilita o botao).
   const [saving, setSaving] = useState(false)
+  // Mensagem de sucesso/erro exibida apos carregar ou salvar.
   const [notice, setNotice] = useState('')
 
+  // Busca o numero de WhatsApp configurado assim que o componente monta (ou
+  // o token muda).
   useEffect(() => {
     api
       .get<{ value: string }>('/admin/store-whatsapp', token ?? undefined)
@@ -1187,6 +1342,7 @@ export function StoreWhatsappSettings({ token }: { token: string | null }) {
       .finally(() => setLoading(false))
   }, [token])
 
+  // Envia o numero (apenas digitos) para o backend salvar.
   async function handleSave() {
     setSaving(true)
     setNotice('')
@@ -1247,12 +1403,20 @@ const emptyApiSettings: ApiSettingsState = {
 // so responde 200 para o administrador fixo - qualquer outro admin recebe
 // 403, e aqui a gaveta simplesmente nao aparece (sem aviso de "sem acesso").
 function ApiSettings({ token }: { token: string | null }) {
+  // Valores atuais dos campos sensiveis (tokens/chaves) em edicao.
   const [settings, setSettings] = useState<ApiSettingsState>(emptyApiSettings)
+  // true enquanto verifica se o admin logado tem permissao de ver esta gaveta.
   const [loading, setLoading] = useState(true)
+  // true quando o backend confirmou acesso (admin fixo) - controla se o
+  // componente renderiza algo ou retorna null silenciosamente.
   const [authorized, setAuthorized] = useState(false)
+  // true enquanto a chamada de salvar todas as chaves esta em andamento.
   const [saving, setSaving] = useState(false)
+  // Mensagem de sucesso/erro exibida apos carregar ou salvar.
   const [notice, setNotice] = useState('')
 
+  // Busca as chaves salvas ao montar - um 403 indica que o admin logado nao
+  // e o admin fixo, entao a gaveta fica oculta (ver `authorized` acima).
   useEffect(() => {
     api
       .get<Record<string, string>>('/admin/api-settings', token ?? undefined)
@@ -1274,6 +1438,7 @@ function ApiSettings({ token }: { token: string | null }) {
       .finally(() => setLoading(false))
   }, [token])
 
+  // Salva todas as chaves de uma vez, uma requisicao PUT por chave.
   async function handleSave() {
     setSaving(true)
     setNotice('')
@@ -1395,14 +1560,25 @@ type AdminCandidate = {
   isFixedAdmin: boolean
 }
 
+// Gaveta "Contas": busca clientes cadastrados e permite promover/rebaixar
+// quem tem permissao de administrador, com uma confirmacao antes de aplicar.
 function AdminAssignment({ token }: { token: string | null }) {
+  // Texto de busca por nome/email/telefone dos clientes.
   const [search, setSearch] = useState('')
+  // Lista de clientes retornada pela busca (candidatos a admin).
   const [candidates, setCandidates] = useState<AdminCandidate[]>([])
+  // true enquanto a busca de clientes esta em andamento.
   const [loading, setLoading] = useState(true)
+  // Candidato selecionado para confirmar a troca de permissao (abre o
+  // dialogo de confirmacao) - null quando nenhuma troca esta pendente.
   const [confirmTarget, setConfirmTarget] = useState<AdminCandidate | null>(null)
+  // true enquanto a chamada de promover/rebaixar esta em andamento.
   const [saving, setSaving] = useState(false)
+  // Mensagem de sucesso/erro exibida apos a troca de permissao.
   const [notice, setNotice] = useState('')
 
+  // Busca clientes com debounce de 250ms a cada mudanca no texto de busca
+  // (ou no token), cancelando a busca anterior se o usuario continuar digitando.
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : ''
@@ -1416,6 +1592,8 @@ function AdminAssignment({ token }: { token: string | null }) {
     return () => window.clearTimeout(timeout)
   }, [search, token])
 
+  // Efetiva a troca de permissao de admin do candidato em `confirmTarget`,
+  // atualizando a lista localmente com o novo estado em caso de sucesso.
   async function confirmToggle() {
     if (!confirmTarget) return
     setSaving(true)
@@ -1557,7 +1735,11 @@ function AdminAssignment({ token }: { token: string | null }) {
   )
 }
 
+// Bloco recolhivel generico usado para agrupar cada topico da tela de
+// Configuracoes (Geral, Ferramentas, API, Contas, Aparencia) sob um titulo
+// clicavel - comeca aberto.
 export function SettingsTopic({ title, children }: { title: string; children: ReactNode }) {
+  // Controla se o conteudo do topico esta visivel ou recolhido.
   const [open, setOpen] = useState(true)
   return (
     <section>
@@ -1575,6 +1757,8 @@ export function SettingsTopic({ title, children }: { title: string; children: Re
   )
 }
 
+// Modal da Lixeira: lista nos e tags excluidos, com opcao de restaurar cada
+// um ou apagar permanentemente.
 function TrashModal({
   trash,
   onClose,
@@ -1672,6 +1856,8 @@ function TrashModal({
   )
 }
 
+// Modal de Historico: lista as atividades recentes (criacao, edicao, etc.)
+// com atalho para abrir o alvo de cada uma e opcao de limpar tudo.
 function HistoryModal({
   activities,
   onClose,
@@ -1789,18 +1975,31 @@ type OrderPublicDetail = {
   items: Array<{ name: string; price: number; quantity: number }>
 }
 
+// Modal de Clientes: busca clientes cadastrados, mostra o detalhe de um
+// cliente selecionado (enderecos, pedidos) e permite abrir o detalhe de um
+// pedido especifico.
 function CustomersModal({ token, onClose }: { token: string | null; onClose: () => void }) {
   const format = useCurrency()
+  // Texto de busca por nome/email/telefone/CPF.
   const [search, setSearch] = useState('')
+  // Lista de clientes retornada pela busca atual.
   const [customers, setCustomers] = useState<CustomerSummary[]>([])
+  // true enquanto a lista de clientes esta sendo carregada.
   const [loadingList, setLoadingList] = useState(true)
 
+  // Id do cliente selecionado para ver o detalhe - null fecha o detalhe.
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
+  // Dados detalhados (enderecos, pedidos) do cliente selecionado.
   const [customerDetail, setCustomerDetail] = useState<CustomerDetail | null>(null)
 
+  // Id do pedido selecionado dentro do detalhe do cliente - null fecha o
+  // detalhe do pedido.
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
+  // Dados detalhados do pedido selecionado.
   const [orderDetail, setOrderDetail] = useState<OrderPublicDetail | null>(null)
 
+  // Busca a lista de clientes com debounce de 250ms a cada mudanca na busca,
+  // excluindo a conta fixa de administrador (que nao e um cliente de verdade).
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : ''
@@ -1816,6 +2015,8 @@ function CustomersModal({ token, onClose }: { token: string | null; onClose: () 
     return () => window.clearTimeout(timeout)
   }, [search, token])
 
+  // Busca o detalhe completo do cliente sempre que a selecao muda, cancelando
+  // a resposta se o componente desmontar ou a selecao mudar antes de chegar.
   useEffect(() => {
     if (!selectedCustomerId) return
     let cancelled = false
@@ -1832,6 +2033,8 @@ function CustomersModal({ token, onClose }: { token: string | null; onClose: () 
     }
   }, [selectedCustomerId, token])
 
+  // Busca o detalhe completo do pedido sempre que a selecao de pedido muda,
+  // mesmo tratamento de cancelamento do efeito anterior.
   useEffect(() => {
     if (!selectedOrderId) return
     let cancelled = false
@@ -1848,16 +2051,21 @@ function CustomersModal({ token, onClose }: { token: string | null; onClose: () 
     }
   }, [selectedOrderId])
 
+  // Navega da lista para o detalhe de um cliente, limpando o detalhe antigo
+  // para mostrar o estado de carregamento enquanto o novo chega.
   function openCustomer(id: string) {
     setCustomerDetail(null)
     setSelectedCustomerId(id)
   }
 
+  // Navega do detalhe do cliente para o detalhe de um pedido especifico.
   function openOrder(id: string) {
     setOrderDetail(null)
     setSelectedOrderId(id)
   }
 
+  // Determina qual das 3 "telas" do modal mostrar (lista de clientes,
+  // detalhe do cliente ou detalhe do pedido) a partir das selecoes atuais.
   const view = selectedOrderId ? 'order' : selectedCustomerId ? 'customer' : 'list'
   const title =
     view === 'order' ? 'Pedido' : view === 'customer' ? (customerDetail?.name ?? 'Cliente') : 'Clientes'
@@ -1907,6 +2115,7 @@ function CustomersModal({ token, onClose }: { token: string | null; onClose: () 
           </button>
         </header>
 
+        {/* Tela de lista: busca + lista de clientes encontrados. */}
         {view === 'list' ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="shrink-0 p-3">
@@ -1952,6 +2161,7 @@ function CustomersModal({ token, onClose }: { token: string | null; onClose: () 
             </div>
           </div>
         ) : view === 'customer' ? (
+          // Tela de detalhe do cliente: contato/endereco e a lista de pedidos.
           <div className="min-h-0 flex-1 overflow-y-auto">
             {!customerDetail ? (
               <p className="px-4 py-6 text-center text-xs text-[#6b665f]">Carregando...</p>
@@ -2022,6 +2232,7 @@ function CustomersModal({ token, onClose }: { token: string | null; onClose: () 
             )}
           </div>
         ) : (
+          // Tela de detalhe do pedido: itens comprados e resumo de valores.
           <div className="min-h-0 flex-1 overflow-y-auto">
             {!orderDetail ? (
               <p className="px-4 py-6 text-center text-xs text-[#6b665f]">Carregando...</p>
@@ -2082,6 +2293,9 @@ interface WorkspaceProps {
   onTrashNode: (id: string) => void
 }
 
+// Conteudo central da tela: decide o que mostrar com base na selecao atual -
+// itens de uma tag, a pagina/pasta de um no, a previa embutida de um item em
+// foco, ou um estado vazio pedindo para selecionar algo na gaveta esquerda.
 function Workspace({
   selectedNode,
   selectedTag,
@@ -2092,6 +2306,7 @@ function Workspace({
   onNavigateBack,
   onTrashNode,
 }: WorkspaceProps) {
+  // Selecao e uma tag: mostra todos os itens marcados com ela, numa grade.
   if (selectedTag) {
     const taggedNodes = nodes.filter((node) => node.tagIds.includes(selectedTag.id))
     return (
@@ -2115,6 +2330,7 @@ function Workspace({
     )
   }
 
+  // Nada selecionado ainda: pede para o usuario escolher algo na gaveta.
   if (!selectedNode)
     return (
       <EmptyState
@@ -2124,6 +2340,8 @@ function Workspace({
       />
     )
 
+  // Item em foco (geralmente logo apos cria-lo): mostra a pagina real do
+  // produto dentro de um iframe, com botao de voltar para a pasta/pagina.
   if (selectedNode.type === 'item' && focusedItemId === selectedNode.id) {
     return (
       <div className="flex h-full min-h-0 flex-col bg-white">
@@ -2150,6 +2368,8 @@ function Workspace({
     )
   }
 
+  // O workspace sempre mostra um container (pagina ou pasta): se o no
+  // selecionado ja e um, usa ele; senao sobe ate achar o pai que seja.
   const workspaceNode =
     selectedNode.type === 'page' || selectedNode.type === 'folder'
       ? selectedNode
@@ -2233,6 +2453,10 @@ function Workspace({
         </div>
       )}
 
+      {/* Secao de acoes rapidas: tipos de conteudo que podem ser criados
+          dentro do container atual (subpasta, carrossel, catalogo, destaque) -
+          escondida quando o container e uma subpasta de Itens, que so aceita
+          itens (criados pelo assistente, nao por aqui). */}
       {!isSubfolderUnderItens && (
         <section className="mt-8">
           <div className="mb-3">
@@ -2278,6 +2502,8 @@ function Workspace({
           </div>
         </section>
       )}
+      {/* Grade com o conteudo filho do container atual (subpastas ou
+          blocos/itens, dependendo do tipo). */}
       <section className="mt-8">
         <div className="mb-3">
           <h2 className="text-sm font-semibold">
@@ -2309,6 +2535,9 @@ function Workspace({
   )
 }
 
+// Grade de cartoes clicaveis para uma lista de nos (usada tanto para o
+// conteudo filho de uma pagina/pasta quanto para os itens de uma tag) - cada
+// cartao abre o no ao clicar e tem um botao para move-lo a lixeira.
 function ContentGrid({
   nodes,
   onSelectNode,
@@ -2374,6 +2603,9 @@ function ContentGrid({
   )
 }
 
+// Modal de "Detalhes de uso": mostra onde um no e usado (em qual pagina, em
+// quantos carrosseis/catalogos, o que uma pasta contem, etc.) - acionado pelo
+// `detailNodeId` do componente principal.
 function OrganizerUsageModal({
   node,
   nodes,
@@ -2383,12 +2615,16 @@ function OrganizerUsageModal({
   nodes: OrganizerNode[]
   onClose: () => void
 }) {
+  // Pagina "dona" deste no, subindo a arvore ate achar uma pagina.
   const parentPage = findOrganizerPage(nodes, node)
+  // Se o no for uma pasta, lista seus filhos diretos.
   const folderContents =
     node.type === 'folder' ? nodes.filter((candidate) => candidate.parentId === node.id) : []
+  // Se o no for um carrossel/catalogo, resolve os itens que ele exibe.
   const selectedItems = node.itemIds
     .map((id) => nodes.find((candidate) => candidate.id === id && candidate.type === 'item'))
     .filter((item): item is OrganizerNode => Boolean(item))
+  // Se o no for um item, encontra os carrosseis/catalogos que o incluem.
   const itemUsages =
     node.type === 'item'
       ? nodes.filter(
@@ -2397,6 +2633,9 @@ function OrganizerUsageModal({
             candidate.itemIds.includes(node.id),
         )
       : []
+  // Resumo textual de "quantidade de uso", cujo significado muda conforme o
+  // tipo do no (item: em quantos modulos aparece; carrossel/catalogo: quantos
+  // produtos tem; pasta: quantos conteudos tem; demais: se tem pagina vinculada).
   const quantityLabel =
     node.type === 'item'
       ? `${itemUsages.length} módulo(s)`
@@ -2499,6 +2738,8 @@ function OrganizerUsageModal({
   )
 }
 
+// Cartao pequeno de metrica (rotulo + valor em destaque) usado no topo do
+// modal de Detalhes de uso.
 function UsageMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-stone-200/80 bg-[#fff8ea] p-4">
@@ -2508,6 +2749,8 @@ function UsageMetric({ label, value }: { label: string; value: string }) {
   )
 }
 
+// Linha simples de rotulo + valor (mais discreta que UsageMetric) usada no
+// modal de Detalhes de uso.
 function UsageDetail({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-b border-stone-200/80 pb-3">
@@ -2517,6 +2760,8 @@ function UsageDetail({ label, value }: { label: string; value: string }) {
   )
 }
 
+// Grade de cartoes de produto (com imagem e preco) usada no modal de
+// Detalhes de uso para mostrar os itens de um carrossel/catalogo.
 function UsageProductCards({
   title,
   items,
@@ -2571,6 +2816,8 @@ function UsageProductCards({
   )
 }
 
+// Lista simples de textos (sem imagem) usada no modal de Detalhes de uso
+// para mostrar, por exemplo, em quais modulos um item aparece.
 function UsageList({ title, items, empty }: { title: string; items: string[]; empty: string }) {
   return (
     <div>
@@ -2607,6 +2854,10 @@ interface InspectorProps {
   onSaved: () => void
 }
 
+// Painel da gaveta direita: formulario de propriedades do no ou tag
+// selecionado. Mantem um rascunho local (nodeDraft/tagDraft) que vai sendo
+// sincronizado ao vivo com o store a cada mudanca relevante (syncLive), alem
+// de validar e salvar no submit do formulario.
 function Inspector({
   node,
   tag,
@@ -2620,6 +2871,8 @@ function Inspector({
   onTrashTag,
   onSaved,
 }: InspectorProps) {
+  // Rascunho editavel dos campos do no selecionado, inicializado a partir do
+  // no atual (ou null quando a selecao e uma tag ou nao ha selecao).
   const [nodeDraft, setNodeDraft] = useState(() =>
     node
       ? {
@@ -2643,11 +2896,21 @@ function Inspector({
         }
       : null,
   )
+  // Rascunho editavel dos campos da tag selecionada (null quando a selecao
+  // nao e uma tag).
   const [tagDraft, setTagDraft] = useState(() => (tag ? { name: tag.name, color: tag.color } : null))
+  // Qual campo obrigatorio falhou na ultima tentativa de salvar (nome ou
+  // preco) - usado para destacar o campo e rolar ate ele.
   const [fieldError, setFieldError] = useState<'name' | 'price' | null>(null)
+  // Controla a secao recolhivel "Mais opcoes" do formulario do item.
   const [moreOpen, setMoreOpen] = useState(false)
+  // Controla a secao recolhivel "Aparece em" (blocos de carrossel/catalogo)
+  // do formulario do item/subpasta.
   const [appearsOpen, setAppearsOpen] = useState(false)
+  // Referencia ao campo de nome, usada para rolar ate ele e focar quando a
+  // validacao falha.
   const nameInputRef = useRef<HTMLInputElement>(null)
+  // Referencia ao campo de preco, mesma finalidade da de nome.
   const priceInputRef = useRef<HTMLInputElement>(null)
 
   // Subpasta nao tem mais campo de descricao no formulario - apaga valores
@@ -2658,10 +2921,13 @@ function Inspector({
     }
   }, [node, onUpdateNode])
 
+  // Nenhuma selecao: mostra um estado vazio em vez do formulario.
   if (!node && !tag)
     return <InspectorEmpty title="Propriedades" detail="Selecione um conteúdo para editar seus detalhes." />
 
+  // Selecao e uma tag: formulario simplificado (nome + cor).
   if (tag && tagDraft) {
+    // Valida e salva as alteracoes da tag.
     const submitTag = (event: FormEvent) => {
       event.preventDefault()
       if (!tagDraft.name.trim()) return
@@ -2699,7 +2965,12 @@ function Inspector({
   }
 
   if (!node || !nodeDraft) return null
+  // Aplica mudancas no store imediatamente (ao vivo), sem esperar o submit -
+  // usado por campos como tags/itens/estoque que devem refletir na hora.
   const syncLive = (changes: Partial<OrganizerNode>) => onUpdateNode(node.id, changes)
+  // Calcula o proprio no e todos os seus descendentes, para impedir que o
+  // formulario ofereca mover um no para dentro de si mesmo ou de um filho
+  // (o que criaria um ciclo na arvore).
   const invalidParentIds = new Set([node.id])
   let foundDescendant = true
   while (foundDescendant) {
@@ -2730,7 +3001,11 @@ function Inspector({
           (candidate) =>
             candidate.type === 'page' && candidate.id !== 'itens' && !invalidParentIds.has(candidate.id),
         )
+  // Paginas "de sistema" (imutaveis) nao podem ter nome/estrutura alterados -
+  // usado para desabilitar campos no formulario.
   const protectedPage = node.type === 'page' && Boolean(node.immutable)
+  // Valida nome/preco obrigatorios (rolando ate o campo com erro quando
+  // falha) e, se tudo ok, grava todas as alteracoes do no de uma vez.
   const submitNode = (event: FormEvent) => {
     event.preventDefault()
     if (!nodeDraft.name.trim()) {
@@ -2772,6 +3047,8 @@ function Inspector({
     })
     onSaved()
   }
+  // Adiciona/remove um id de uma lista do rascunho (tags ou itens
+  // selecionados), aplicando a mudanca tambem ao vivo no store.
   const toggleInList = (key: 'tagIds' | 'itemIds', id: string) => {
     const current = nodeDraft[key]
     const next = current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
@@ -2799,6 +3076,8 @@ function Inspector({
     node.type === 'item' || node.type === 'folder'
       ? nodes.filter((candidate) => candidate.type === 'carousel' || candidate.type === 'catalog')
       : []
+  // Agrupa os blocos de posicionamento pela pagina onde cada um vive, para
+  // exibir a lista "Aparece em" organizada por pagina.
   const placementsByPage = new Map<string, OrganizerNode[]>()
   placementBlocks.forEach((block) => {
     const pageName = nodes.find((candidate) => candidate.id === block.parentId)?.name ?? 'Outros'
@@ -2806,6 +3085,8 @@ function Inspector({
     list.push(block)
     placementsByPage.set(pageName, list)
   })
+  // Adiciona/remove o item atual da lista de itens de um bloco de
+  // carrossel/catalogo (ou seja, edita o BLOCO, nao o item).
   const togglePlacement = (blockId: string) => {
     const block = nodes.find((candidate) => candidate.id === blockId)
     if (!block) return
@@ -2815,6 +3096,8 @@ function Inspector({
       : [...current, node.id]
     onUpdateNode(blockId, { itemIds: next })
   }
+  // Marca/desmarca um bloco como posicionamento padrao de uma subpasta
+  // (afeta apenas os itens futuros criados nela, nao os ja existentes).
   const toggleDefaultPlacement = (blockId: string) => {
     const current = nodeDraft.defaultPlacementIds
     const next = current.includes(blockId)
@@ -2844,6 +3127,8 @@ function Inspector({
     })
   }
 
+  // Converte a imagem escolhida (ex.: do bloco de destaque) em data URL e
+  // grava no rascunho e ao vivo no store.
   const handleImageFile = (file?: File) => {
     if (!file) return
     const reader = new FileReader()
@@ -2856,6 +3141,8 @@ function Inspector({
     reader.readAsDataURL(file)
   }
 
+  // Converte varias fotos escolhidas (galeria do item) em data URLs em
+  // paralelo e as acrescenta a lista de imagens existente.
   const handleItemPhotos = (files: FileList | null) => {
     if (!files || files.length === 0) return
     Promise.all(
@@ -2875,6 +3162,7 @@ function Inspector({
     })
   }
 
+  // Remove uma foto da galeria do item pelo indice.
   const removeItemPhoto = (index: number) => {
     const nextImages = nodeDraft.images.filter((_, photoIndex) => photoIndex !== index)
     setNodeDraft({ ...nodeDraft, images: nextImages })
@@ -2884,6 +3172,8 @@ function Inspector({
   return (
     <form onSubmit={submitNode} className="p-4">
       <InspectorHeading icon={nodeIcon(node.type)} title="Propriedades" />
+      {/* Faixa com o tipo do no e seu status (ou "Somente organização" para
+          pastas e a raiz de Itens). */}
       <div className="mb-4 flex items-center justify-between gap-2 rounded-xl bg-[#fff1d6] px-3 py-2">
         <span className="text-[10px] uppercase tracking-wider text-[#8b5200]">
           {organizerTypeLabels[node.type]}
@@ -2910,6 +3200,9 @@ function Inspector({
           <p className="mt-1 text-[10px] font-medium text-[#a0382f]">Informe o nome do item.</p>
         ) : null}
       </Field>
+      {/* Bloco exclusivo de subpasta: define se ela aplica um
+          posicionamento padrao aos itens criados dentro dela, e em quais
+          blocos (carrossel/catalogo). */}
       {node.type === 'folder' && (
         <div className="mb-4 rounded-xl border border-stone-200 bg-white">
           <label className="flex items-center gap-2 border-b border-stone-100 px-3 py-2.5 text-xs">
@@ -2985,6 +3278,8 @@ function Inspector({
           />
         </Field>
       )}
+      {/* Status (rascunho/publicado/etc.) - nao existe para pastas nem para
+          a raiz de Itens, que so organizam conteudo. */}
       {node.type !== 'folder' && node.id !== 'itens' && (
         <Field label="Status">
           <select
@@ -3010,6 +3305,8 @@ function Inspector({
           </select>
         </Field>
       )}
+      {/* Selecao de pagina-pai - apenas para carrossel/catalogo/destaque
+          (pagina nao se move, pasta/item tem regra propria de container). */}
       {node.type !== 'page' && node.type !== 'folder' && node.type !== 'item' && (
         <Field label="Página">
           <select
@@ -3029,6 +3326,7 @@ function Inspector({
           </select>
         </Field>
       )}
+      {/* Upload de imagem unica - exclusivo do bloco de Destaque. */}
       {node.type === 'highlight' && (
         <div className="mb-4">
           <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6b665f]">
@@ -3048,6 +3346,8 @@ function Inspector({
           )}
         </div>
       )}
+      {/* Campos exclusivos de item: preco (obrigatorio) e resumo do
+          estoque (editado de fato em outro lugar do formulario). */}
       {node.type === 'item' && (
         <Field label="Preço">
           <input
@@ -3091,6 +3391,8 @@ function Inspector({
           </select>
         </Field>
       )}
+      {/* Selecao multipla de tags - so para item, e so quando ha tags
+          cadastradas. */}
       {node.type === 'item' && tags.length > 0 && (
         <ChoiceList
           label="Tags"
@@ -3099,6 +3401,8 @@ function Inspector({
           onToggle={(id) => toggleInList('tagIds', id)}
         />
       )}
+      {/* Em quais carrosseis/catalogos este item aparece - escondido para
+          rascunhos, que ainda nao devem ser exibidos em lugar nenhum. */}
       {node.type === 'item' && nodeDraft.status !== 'draft' && (
         <div className="mb-4 rounded-xl border border-stone-200 bg-white">
           <button
@@ -3148,6 +3452,8 @@ function Inspector({
           )}
         </div>
       )}
+      {/* Reordenar entre irmaos - so para blocos de pagina (carrossel,
+          catalogo, destaque), que tem ordem visual relevante. */}
       {node.type !== 'item' && node.type !== 'folder' && !node.immutable && !protectedPage && (
         <div className="mt-2 grid grid-cols-2 gap-2">
           <button
@@ -3166,6 +3472,10 @@ function Inspector({
           </button>
         </div>
       )}
+      {/* Botoes de acao que variam por tipo: item ganha "Mais opcoes" +
+          duplicar; pasta ganha duplicar + lixeira direto; os demais tipos
+          (carrossel/catalogo/destaque) so duplicar (a lixeira deles fica no
+          botao separado logo abaixo). */}
       {node.type === 'item' ? (
         !node.immutable && !protectedPage ? (
           <div className="mt-5 flex justify-end gap-2">
@@ -3234,6 +3544,9 @@ function Inspector({
           <Trash2 size={15} /> Mover para a lixeira
         </button>
       )}
+      {/* Modal "Mais opcoes" do item: reune os campos menos usados
+          (nome/descricao/status/preco/fotos/SKU/etc.) fora da gaveta
+          principal, para nao sobrecarregar o formulario padrao. */}
       {node.type === 'item' && moreOpen && (
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <button
@@ -3496,6 +3809,8 @@ function Inspector({
   )
 }
 
+// Envolve um campo de formulario com seu rotulo pequeno em maiusculas,
+// padrao visual reaproveitado em todos os formularios do organizador.
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="mb-4 block">
@@ -3507,6 +3822,8 @@ export function Field({ label, children }: { label: string; children: React.Reac
   )
 }
 
+// Lista de checkboxes rolavel para selecao multipla (ex.: tags de um item),
+// com mensagem propria para quando nao ha opcoes disponiveis.
 function ChoiceList({
   label,
   options,
@@ -3546,6 +3863,9 @@ function ChoiceList({
   )
 }
 
+// Par de botoes padrao no rodape do formulario do Inspector (salvar e mover
+// para a lixeira) - usado pelo formulario de tag, que nao tem as acoes mais
+// elaboradas (duplicar/mais opcoes) do formulario de no.
 function InspectorActions({ onSaveLabel, onDelete }: { onSaveLabel: string; onDelete: () => void }) {
   return (
     <div className="mt-6 space-y-2">
@@ -3566,6 +3886,7 @@ function InspectorActions({ onSaveLabel, onDelete }: { onSaveLabel: string; onDe
   )
 }
 
+// Titulo com icone no topo do painel da gaveta direita (Inspector).
 function InspectorHeading({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
     <div className="mb-5 flex items-center gap-2 border-b border-stone-200/80 pb-3">
@@ -3575,6 +3896,7 @@ function InspectorHeading({ icon, title }: { icon: React.ReactNode; title: strin
   )
 }
 
+// Estado vazio exibido na gaveta direita quando nada esta selecionado.
 function InspectorEmpty({ title, detail }: { title: string; detail: string }) {
   return (
     <div className="flex h-full min-h-64 flex-col items-center justify-center p-6 text-center">
@@ -3585,6 +3907,8 @@ function InspectorEmpty({ title, detail }: { title: string; detail: string }) {
   )
 }
 
+// Cartao clicavel de "acao rapida" usado no Workspace para criar um novo
+// bloco de conteudo (subpasta, carrossel, catalogo ou destaque).
 function QuickAction({
   icon,
   title,
@@ -3611,6 +3935,8 @@ function QuickAction({
   )
 }
 
+// Placeholder generico (icone + titulo + detalhe opcional) para listas e
+// paineis sem conteudo, reaproveitado em varios pontos do organizador.
 function EmptyState({ icon, title, detail }: { icon: React.ReactNode; title: string; detail?: string }) {
   return (
     <div className="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-stone-200 bg-[#fff8ea] p-6 text-center text-[#6b665f]">
@@ -3621,6 +3947,8 @@ function EmptyState({ icon, title, detail }: { icon: React.ReactNode; title: str
   )
 }
 
+// Selo colorido com o rotulo do status de um no (rascunho, publicado,
+// em breve, sem estoque, pouco estoque) - cada status tem sua propria cor.
 function StatusPill({ status, compact = false }: { status: OrganizerNode['status']; compact?: boolean }) {
   const colors: Record<OrganizerNode['status'], string> = {
     draft: 'bg-stone-100 text-[#6b665f]',
@@ -3638,6 +3966,8 @@ function StatusPill({ status, compact = false }: { status: OrganizerNode['status
   )
 }
 
+// Botao do cabecalho que abre/fecha a gaveta esquerda ou direita - troca o
+// icone e o rotulo de acessibilidade conforme o lado e o estado atual.
 function DrawerToggle({
   drawer,
   open,
